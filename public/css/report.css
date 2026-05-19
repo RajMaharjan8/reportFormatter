@@ -1,0 +1,289 @@
+/* ============================================================
+   Report print stylesheet — fetched and applied by Paged.js
+   when paginating the report output into A4 pages.
+   ============================================================ */
+
+/* ---- Page geometry ---------------------------------------- */
+@page {
+    size: A4;
+    margin: 25mm 22mm 22mm 22mm;
+}
+
+/* Cover page: edge-to-edge, no page number */
+@page cover {
+    margin: 0;
+}
+
+/* Page numbers are applied after pagination by report.js — front matter in
+   lower-roman, the body restarting at 1 — because Paged.js cannot reliably
+   restart its own page counter. The 22mm bottom @page margin leaves room. */
+
+.report-cover { page: cover; }
+
+/* Start a fresh page before each major block */
+.page-break { break-before: page; }
+
+/* ---- Base typography -------------------------------------- */
+.report-doc {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 12pt;
+    line-height: 1.5;
+    color: #111;
+}
+
+/* ---- Cover ------------------------------------------------ */
+.report-cover {
+    width: 210mm;
+    height: 297mm;
+    overflow: hidden;
+}
+
+.cover-sheet-plain {
+    box-sizing: border-box;
+    width: 210mm;
+    height: 297mm;
+    padding: 16mm 22mm 14mm;
+    display: flex;
+    flex-direction: column;
+    text-align: center;
+    font-family: "Times New Roman", Times, serif;
+    color: #111;
+}
+
+.cover-logo-row {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.cover-logo-row img {
+    height: 16mm;
+    width: auto;
+}
+
+.cover-logo-college {
+    margin-top: 6mm;
+}
+
+.cover-logo-college img {
+    height: 38mm;
+    width: auto;
+}
+
+.cover-block {
+    margin-top: 11mm;
+    font-weight: 700;
+    font-size: 13pt;
+}
+
+.cover-block p {
+    margin: 2pt 0;
+}
+
+.cover-confirm {
+    margin-top: auto;
+    padding: 0 6mm;
+    font-style: italic;
+    font-size: 11pt;
+    line-height: 1.4;
+}
+
+/* ---- Title page ------------------------------------------- */
+.report-title-page {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 235mm;
+    text-align: center;
+}
+
+.report-title-page .doc-title {
+    font-size: 20pt;
+    font-weight: 700;
+}
+
+/* ---- Front-matter headings -------------------------------- */
+.frontmatter-heading {
+    font-size: 15pt;
+    font-weight: 700;
+    margin: 0 0 14pt;
+}
+
+/* ---- Table of Contents / Tables / Figures ----------------- */
+.toc {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.toc-entry {
+    margin: 4pt 0;
+}
+
+.toc-entry a {
+    display: flex;
+    align-items: baseline;
+    text-decoration: none;
+    color: inherit;
+    cursor: pointer;
+}
+
+.toc-entry .toc-label {
+    order: 1;
+}
+
+/* Dotted leader stretching between the label and the page number */
+.toc-entry a::before {
+    content: "";
+    order: 2;
+    flex: 1 1 auto;
+    margin: 0 4pt;
+    border-bottom: 1pt dotted #777;
+    transform: translateY(-2pt);
+}
+
+/* Real page number resolved by Paged.js from the anchor target */
+.toc-entry a::after {
+    content: target-counter(attr(href), page);
+    order: 3;
+    white-space: nowrap;
+}
+
+.toc-level-1 {
+    font-weight: 700;
+    margin-top: 8pt;
+}
+
+.toc-level-2 { padding-left: 8mm; }
+.toc-level-3 { padding-left: 16mm; }
+.toc-level-4 { padding-left: 24mm; }
+
+.toc-empty {
+    color: #666;
+    font-style: italic;
+}
+
+/* ---- Abstract --------------------------------------------- */
+.abstract-text {
+    text-align: justify;
+    white-space: pre-wrap;
+}
+
+/* ---- Body sections ---------------------------------------- */
+.report-section {
+    margin: 0;
+}
+
+.section-title {
+    font-size: 14pt;
+    font-weight: 700;
+    text-align: center;
+    margin: 0 0 14pt;
+}
+
+/* ---- Editor heading content (numbers baked in by ReportCompiler) */
+.report-content h1 { font-size: 13pt; font-weight: 700; margin: 13pt 0 6pt; }
+.report-content h2 { font-size: 12pt; font-weight: 700; margin: 11pt 0 5pt; }
+.report-content h3 { font-size: 12pt; font-weight: 700; margin: 10pt 0 5pt; }
+
+.report-content p {
+    margin: 6pt 0;
+    line-height: 1.5;
+    text-align: justify;
+}
+
+.report-content ul { list-style: disc; padding-left: 8mm; margin: 6pt 0; }
+.report-content ol { list-style: decimal; padding-left: 8mm; margin: 6pt 0; }
+.report-content li { margin: 3pt 0; }
+
+.report-content a { color: #1d4ed8; }
+
+.report-content blockquote {
+    border-left: 3pt solid #ccc;
+    padding-left: 10pt;
+    margin: 8pt 0;
+    color: #333;
+}
+
+.report-content strong { font-weight: 700; }
+.report-content em { font-style: italic; }
+
+/* ---- Figures (CKEditor `figure.image` and legacy `report-figure`) -- */
+.report-content figure.image,
+.report-content figure.report-figure {
+    margin: 10pt auto;
+    text-align: center;
+}
+
+.report-content figure.image img,
+.report-content figure.report-figure img {
+    display: block;
+    margin: 0 auto;
+    max-width: 100%;
+    height: auto;
+}
+
+.report-content img {
+    max-width: 100%;
+    height: auto;
+}
+
+.report-content figure.image figcaption,
+.report-content figure.report-figure figcaption {
+    margin-top: 4pt;
+    font-size: 10pt;
+    font-weight: 700;
+}
+
+/* ---- Tables (CKEditor wraps them in `figure.table`) -------- */
+.report-content figure.table {
+    margin: 8pt 0;
+    width: 100%;
+}
+
+.report-content table {
+    border-collapse: collapse;
+    table-layout: fixed;
+    width: 100%;
+    margin: 8pt 0;
+    font-size: 11pt;
+}
+
+.report-content figure.table table {
+    margin: 0;
+}
+
+.report-content th,
+.report-content td {
+    border: 1pt solid #333;
+    padding: 4pt 6pt;
+    text-align: left;
+    vertical-align: top;
+    overflow-wrap: break-word;
+}
+
+.report-content th {
+    background: #f0f0f0;
+    font-weight: 700;
+}
+
+.report-content table caption,
+.report-content figure.table figcaption {
+    caption-side: bottom;
+    margin-top: 4pt;
+    font-size: 10pt;
+    font-weight: 700;
+    text-align: center;
+}
+
+/* ---- Pagination niceties ---------------------------------- */
+.report-content figure,
+.report-content table {
+    break-inside: avoid;
+}
+
+.section-title,
+.report-content h1,
+.report-content h2,
+.report-content h3 {
+    break-after: avoid;
+}

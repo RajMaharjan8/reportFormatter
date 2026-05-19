@@ -1,0 +1,221 @@
+@import 'tailwindcss';
+
+@source '../views';
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+
+@theme {
+    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+}
+
+/* Hide Alpine-controlled elements until Alpine initialises */
+[x-cloak] { display: none !important; }
+
+/* The printed report uses Times New Roman throughout */
+.report-page { font-family: 'Times New Roman', Times, serif; }
+
+/* Numbered section titles — each section is heading level 1 (1, 2, 3 …) */
+.report-sections { counter-reset: section; }
+.report-section { counter-increment: section; }
+.section-title {
+    font-family: 'Times New Roman', Times, serif;
+    font-size: 14pt;
+    font-weight: 700;
+    color: #111827;
+    margin-bottom: 0.5rem;
+}
+.section-title::before { content: counter(section) ".\00a0\00a0"; }
+
+/* TipTap / rendered report content — Times New Roman, academic heading numbers */
+.tiptap-content {
+    font-family: 'Times New Roman', Times, serif;
+    font-size: 12pt;
+    line-height: 1.6;
+    color: #1f2937;
+    counter-reset: h1;
+}
+.tiptap-content h1,
+.tiptap-content h2,
+.tiptap-content h3 { font-family: 'Times New Roman', Times, serif; }
+/* Editor preview only — headings are graduated so applying H1/H2/H3 is
+   visibly obvious. The printed report renders them per report.css. */
+.tiptap-content h1 { font-size: 1.65rem; font-weight: 700; margin: 1.1rem 0 0.6rem; counter-increment: h1; counter-reset: h2; }
+.tiptap-content h2 { font-size: 1.35rem; font-weight: 700; margin: 0.9rem 0 0.45rem; counter-increment: h2; counter-reset: h3; }
+.tiptap-content h3 { font-size: 1.12rem; font-weight: 700; margin: 0.8rem 0 0.4rem; counter-increment: h3; }
+.tiptap-content h1::before { content: counter(section) "." counter(h1) "\00a0\00a0"; }
+.tiptap-content h2::before { content: counter(section) "." counter(h1) "." counter(h2) "\00a0\00a0"; }
+.tiptap-content h3::before { content: counter(section) "." counter(h1) "." counter(h2) "." counter(h3) "\00a0\00a0"; }
+.tiptap-content p { margin: 0.5rem 0; font-size: 12pt; }
+.tiptap-content ul { list-style: disc; padding-left: 1.5rem; margin: 0.5rem 0; }
+.tiptap-content ol { list-style: decimal; padding-left: 1.5rem; margin: 0.5rem 0; }
+.tiptap-content li { font-size: 12pt; }
+.tiptap-content blockquote { border-left: 3px solid #d1d5db; padding-left: 1rem; color: #4b5563; margin: 0.75rem 0; }
+.tiptap-content a { color: #4f46e5; text-decoration: underline; }
+.tiptap-content code { background: #f3f4f6; padding: 0.125rem 0.25rem; border-radius: 0.25rem; font-size: 0.875em; }
+.tiptap-content pre { background: #1f2937; color: #f9fafb; padding: 0.75rem 1rem; border-radius: 0.375rem; overflow-x: auto; margin: 0.75rem 0; }
+.tiptap-content pre code { background: transparent; color: inherit; padding: 0; }
+.tiptap-content hr { border: none; border-top: 2px solid #e5e7eb; margin: 1.25rem 0; }
+.tiptap-content:focus { outline: none; }
+.tiptap-content .ProseMirror-selectednode { outline: 2px solid #6366f1; border-radius: 0.25rem; }
+
+/* Figures — image + caption */
+.tiptap-content figure.report-figure { margin: 1rem 0; text-align: center; }
+.tiptap-content figure.report-figure img { max-width: 100%; height: auto; margin: 0 auto; border-radius: 0.25rem; }
+.tiptap-content figure.report-figure figcaption {
+    margin-top: 0.375rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #4b5563;
+}
+
+/* Tables — with caption */
+.tiptap-content table { border-collapse: collapse; margin: 0.75rem 0; width: 100%; }
+.tiptap-content th, .tiptap-content td { border: 1px solid #d1d5db; padding: 0.5rem 0.75rem; text-align: left; min-width: 4rem; }
+.tiptap-content th { background: #f9fafb; font-weight: 600; }
+.tiptap-content table caption {
+    caption-side: bottom;
+    margin-top: 0.375rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #4b5563;
+    text-align: center;
+}
+
+/* Placeholder for empty paragraphs only — empty headings keep showing their number */
+.tiptap-content p.is-editor-empty:first-child::before,
+.tiptap-content p.is-empty::before {
+    content: attr(data-placeholder);
+    color: #9ca3af;
+    float: left;
+    pointer-events: none;
+    height: 0;
+}
+
+/* Fixed editor toolbar buttons */
+.toolbar-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.75rem;
+    height: 1.75rem;
+    padding: 0 0.5rem;
+    font-size: 0.8125rem;
+    color: #374151;
+    border-radius: 0.3125rem;
+    cursor: pointer;
+}
+.toolbar-btn:hover { background: #f3f4f6; }
+.toolbar-divider { width: 1px; height: 1.25rem; margin: 0 0.25rem; background: #e5e7eb; }
+
+/* Simple contenteditable section editor */
+.se-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem;
+    border-bottom: 1px solid #e5e7eb;
+    padding: 0.375rem 0.75rem;
+}
+
+.se-group-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #6b7280;
+    padding: 0 0.25rem;
+}
+
+.se-content {
+    font-family: 'Times New Roman', Times, serif;
+    font-size: 12pt;
+    line-height: 1.5;
+    color: #1f2937;
+    min-height: 440px;
+    padding: 1.25rem 2rem;
+    outline: none;
+    counter-reset: h2 figure table;
+}
+
+.se-content:empty::before {
+    content: 'Start writing this section…';
+    color: #9ca3af;
+}
+
+.se-content p { margin: 0.5rem 0; }
+
+/* Auto-numbered headings — H2 = section.n (e.g. 1.1), H3 = section.n.m */
+.se-content h2 {
+    font-size: 12pt;
+    font-weight: 700;
+    margin: 1rem 0 0.5rem;
+    counter-increment: h2;
+    counter-reset: h3;
+}
+
+.se-content h3 {
+    font-size: 12pt;
+    font-weight: 700;
+    margin: 0.85rem 0 0.4rem;
+    counter-increment: h3;
+}
+
+.se-content h2::before {
+    content: counter(section) '.' counter(h2) '\00a0\00a0';
+    color: #4f46e5;
+}
+
+.se-content h3::before {
+    content: counter(section) '.' counter(h2) '.' counter(h3) '\00a0\00a0';
+    color: #4f46e5;
+}
+
+.se-content ul { list-style: disc; padding-left: 1.5rem; margin: 0.5rem 0; }
+.se-content ol { list-style: decimal; padding-left: 1.5rem; margin: 0.5rem 0; }
+.se-content a { color: #4f46e5; text-decoration: underline; }
+
+/* Figures — image + auto-numbered caption */
+.se-content figure.image {
+    margin: 1rem 0;
+    text-align: center;
+    counter-increment: figure;
+}
+.se-content figure.image img { display: block; margin: 0 auto; max-width: 100%; height: auto; }
+.se-content img { cursor: pointer; }
+.se-content img.is-selected { outline: 3px solid #4f46e5; outline-offset: 2px; }
+.se-content figure.image figcaption {
+    margin-top: 0.3rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #4b5563;
+}
+.se-content figure.image figcaption::before {
+    content: 'Figure ' counter(figure) ': ';
+    color: #4f46e5;
+}
+
+/* Tables — auto-numbered caption */
+.se-content table {
+    border-collapse: collapse;
+    table-layout: fixed;
+    width: 100%;
+    margin: 1rem 0;
+    counter-increment: table;
+}
+.se-content th,
+.se-content td {
+    border: 1px solid #d1d5db;
+    padding: 0.4rem 0.6rem;
+    text-align: left;
+    vertical-align: top;
+    overflow-wrap: break-word;
+}
+.se-content th { background: #f9fafb; font-weight: 700; }
+.se-content table caption {
+    caption-side: bottom;
+    margin-top: 0.3rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #4b5563;
+}
+.se-content table caption::before {
+    content: 'Table ' counter(table) ': ';
+    color: #4f46e5;
+}
