@@ -167,6 +167,12 @@
     color: #4f46e5;
 }
 
+/* Front-matter pages are unnumbered — hide the editor heading numbers */
+.se-content.se-front-page h2::before,
+.se-content.se-front-page h3::before {
+    content: none;
+}
+
 .se-content ul { list-style: disc; padding-left: 1.5rem; margin: 0.5rem 0; }
 .se-content ol { list-style: decimal; padding-left: 1.5rem; margin: 0.5rem 0; }
 .se-content a { color: #4f46e5; text-decoration: underline; }
@@ -218,4 +224,29 @@
 .se-content table caption::before {
     content: 'Table ' counter(table) ': ';
     color: #4f46e5;
+}
+
+/* Inline citation chips inserted from the references manager */
+.se-content .ref-cite {
+    display: inline;
+    padding: 0 0.15rem;
+    background: #f5f3ff;
+    color: #5b21b6;
+    border-radius: 0.25rem;
+    font-weight: 600;
+    cursor: default;
+    white-space: nowrap;
+}
+
+/* Placeholder shown for the auto-generated references list */
+.se-content .references-list-placeholder {
+    margin: 1.25rem 0;
+    padding: 0.75rem 1rem;
+    background: #f5f3ff;
+    color: #5b21b6;
+    border: 1px dashed #c4b5fd;
+    border-radius: 0.375rem;
+    font-style: italic;
+    font-size: 0.9rem;
+    text-align: center;
 }

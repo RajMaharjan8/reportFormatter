@@ -2,6 +2,7 @@
 
 use App\Models\Report;
 use App\Models\Section;
+use App\Support\CitationFormatter;
 use Livewire\Component;
 
 new class extends Component
@@ -11,6 +12,8 @@ new class extends Component
     public ?Section $activeSection = null;
 
     public string $newSectionTitle = '';
+
+    public string $newFrontPageTitle = '';
 
     public string $editTitle = '';
 
@@ -27,41 +30,76 @@ new class extends Component
         $this->syncEditorFromActive();
     }
 
-    public function getSectionsProperty()
+    /**
+     * Custom front-matter pages, shown before the contents.
+     */
+    public function getFrontPagesProperty()
     {
-        return $this->report->sections()->get();
+        return $this->report->sections()->where('placement', 'front')->orderBy('order')->get();
     }
 
     /**
-     * The 1-based position of the active section, used as the top heading number.
+     * Numbered body sections (1, 2, 3 …).
+     */
+    public function getBodySectionsProperty()
+    {
+        return $this->report->sections()->where('placement', 'body')->orderBy('order')->get();
+    }
+
+    /**
+     * The 1-based position of the active body section, used as its heading
+     * number. Front-matter pages are unnumbered and return 0.
      */
     public function getActiveSectionNumberProperty(): int
     {
-        if (! $this->activeSection) {
+        if (! $this->activeSection || $this->activeSection->isFrontPage()) {
             return 0;
         }
 
-        return (int) $this->report->sections()->pluck('id')->search($this->activeSection->id) + 1;
+        return (int) $this->report->sections()
+            ->where('placement', 'body')
+            ->orderBy('order')
+            ->pluck('id')
+            ->search($this->activeSection->id) + 1;
     }
 
     public function addSection(): void
     {
-        $title = trim($this->newSectionTitle);
+        if ($this->createPage($this->newSectionTitle, 'body')) {
+            $this->newSectionTitle = '';
+        }
+    }
+
+    public function addFrontPage(): void
+    {
+        if ($this->createPage($this->newFrontPageTitle, 'front')) {
+            $this->newFrontPageTitle = '';
+        }
+    }
+
+    /**
+     * Create a body section or front-matter page, then open it in the editor.
+     */
+    protected function createPage(string $title, string $placement): bool
+    {
+        $title = trim($title);
 
         if ($title === '') {
-            return;
+            return false;
         }
 
         $order = ($this->report->sections()->max('order') ?? -1) + 1;
 
         $section = $this->report->sections()->create([
+            'placement' => $placement,
             'title' => $title,
             'order' => $order,
             'content' => null,
         ]);
 
-        $this->newSectionTitle = '';
         $this->selectSection($section->id);
+
+        return true;
     }
 
     public function selectSection(int $sectionId): void
@@ -104,16 +142,70 @@ new class extends Component
     {
         $itemId = (int) $item;
 
-        $ids = $this->report->sections()->orderBy('order')->pluck('id')->all();
+        $moved = $this->report->sections()->whereKey($itemId)->first();
+
+        if (! $moved) {
+            return;
+        }
+
+        $front = $this->report->sections()->where('placement', 'front')->orderBy('order')->pluck('id')->all();
+        $body = $this->report->sections()->where('placement', 'body')->orderBy('order')->pluck('id')->all();
+
+        $isFront = $moved->isFrontPage();
+        $ids = $isFront ? $front : $body;
         $ids = array_values(array_filter($ids, fn ($id) => (int) $id !== $itemId));
 
         array_splice($ids, $position, 0, [$itemId]);
 
-        foreach ($ids as $order => $id) {
+        if ($isFront) {
+            $front = $ids;
+        } else {
+            $body = $ids;
+        }
+
+        foreach (array_merge($front, $body) as $order => $id) {
             Section::whereKey($id)
                 ->where('report_id', $this->report->id)
                 ->update(['order' => $order]);
         }
+    }
+
+    /**
+     * Build a JSON-friendly map of every reference belonging to this report,
+     * with the inline citation pre-rendered in each supported format. Handed
+     * to the editor so the citation picker can render the correct inline text
+     * without a server round-trip.
+     *
+     * @return list<array{id: int, type: string, label: string, inline: array<string, string>}>
+     */
+    public function getReferencesPayloadProperty(): array
+    {
+        $references = $this->report->references()->get();
+        $payload = [];
+
+        foreach (CitationFormatter::FORMATS as $format) {
+            $formatter = new CitationFormatter($format, $references);
+
+            foreach ($references as $reference) {
+                $payload[$reference->id]['id'] = (int) $reference->id;
+                $payload[$reference->id]['type'] = $reference->type;
+                $payload[$reference->id]['label'] = $this->referenceLabel($reference);
+                $payload[$reference->id]['inline'][$format] = $formatter->inline($reference);
+            }
+        }
+
+        return array_values($payload);
+    }
+
+    protected function referenceLabel(\App\Models\Reference $reference): string
+    {
+        $authors = trim((string) $reference->field('authors', ''));
+        $year = trim((string) $reference->field('year', ''));
+        $title = trim((string) $reference->field('title', $reference->field('site_name', '')));
+
+        $head = trim(($authors !== '' ? $authors : '').($year !== '' ? " ({$year})" : ''));
+
+        return $head === '' ? ($title !== '' ? $title : 'Untitled reference') : "{$head} — {$title}";
     }
 
     public function save(?string $content = null)
@@ -149,20 +241,58 @@ new class extends Component
                 <a href="{{ route('reports.cover', ['report' => $report]) }}" class="text-xs font-medium text-indigo-600 hover:text-indigo-500">&larr; Back to cover</a>
                 <h1 class="truncate text-sm font-semibold text-gray-900">{{ $report->module_code }} &middot; {{ $report->module_title }}</h1>
             </div>
-            <a href="{{ route('reports.output', ['report' => $report]) }}" class="shrink-0 rounded-md bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-700">
-                View full report
-            </a>
+            <div class="flex shrink-0 items-center gap-2">
+                <livewire:manage-references :report="$report" />
+                <a href="{{ route('reports.output', ['report' => $report]) }}" class="rounded-md bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-700">
+                    View full report
+                </a>
+            </div>
         </div>
     </header>
 
     <div class="mx-auto flex max-w-7xl gap-6 px-4 py-6 sm:px-6">
-        <aside class="w-64 shrink-0">
+        <aside class="w-64 shrink-0 space-y-4">
+            {{-- Front-matter pages — shown after the cover, before the contents --}}
+            <div class="rounded-lg bg-white p-4 shadow-sm ring-1 ring-gray-200">
+                <h2 class="text-xs font-semibold uppercase tracking-wide text-gray-500">Front pages</h2>
+                <p class="mt-1 text-[11px] text-gray-400">Extra pages after the cover, before the contents. Unnumbered.</p>
+
+                <ul wire:sort="reorder" class="mt-3 space-y-1">
+                    @forelse ($this->frontPages as $section)
+                        <li
+                            wire:key="section-{{ $section->id }}"
+                            wire:sort:item="{{ $section->id }}"
+                            class="group flex items-center gap-1 rounded-md px-1.5 py-1.5 text-sm {{ $activeSection?->is($section) ? 'bg-amber-50 text-amber-800' : 'text-gray-700 hover:bg-gray-50' }}"
+                        >
+                            <span wire:sort:handle class="cursor-grab select-none text-gray-300 hover:text-gray-500" title="Drag to reorder">⠿</span>
+                            <button type="button" wire:click="selectSection({{ $section->id }})" class="flex-1 truncate text-left">
+                                {{ $section->title }}
+                            </button>
+                            <button type="button" wire:click="deleteSection({{ $section->id }})" wire:confirm="Delete this page?" class="opacity-0 group-hover:opacity-100 text-xs text-red-600 hover:text-red-800">
+                                &times;
+                            </button>
+                        </li>
+                    @empty
+                        <li class="px-2 py-1.5 text-xs text-gray-500">No front pages yet</li>
+                    @endforelse
+                </ul>
+
+                <form wire:submit="addFrontPage" class="mt-4 border-t border-gray-200 pt-3">
+                    <label for="newFrontPageTitle" class="block text-xs font-medium text-gray-700">Add front page</label>
+                    <div class="mt-1 flex gap-1">
+                        <input type="text" id="newFrontPageTitle" wire:model="newFrontPageTitle" placeholder="e.g. Acknowledgements" class="block w-full rounded-md px-2 py-1.5 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-amber-500">
+                        <button type="submit" class="rounded-md bg-amber-600 px-2.5 py-1.5 text-sm font-semibold text-white hover:bg-amber-500">+</button>
+                    </div>
+                </form>
+            </div>
+
+            {{-- Numbered body sections --}}
             <div class="rounded-lg bg-white p-4 shadow-sm ring-1 ring-gray-200">
                 <h2 class="text-xs font-semibold uppercase tracking-wide text-gray-500">Sections</h2>
                 <p class="mt-1 text-[11px] text-gray-400">Drag the handle to reorder.</p>
 
                 <ul wire:sort="reorder" class="mt-3 space-y-1">
-                    @forelse ($this->sections as $section)
+                    @forelse ($this->bodySections as $section)
                         <li
                             wire:key="section-{{ $section->id }}"
                             wire:sort:item="{{ $section->id }}"
@@ -195,16 +325,27 @@ new class extends Component
             @if ($activeSection)
                 <div
                     wire:key="editor-{{ $activeSection->id }}"
-                    x-data="editor({ initialContent: @js(\App\Support\SectionContent::toHtml($activeSection->content)) })"
+                    x-data="editor({
+                        initialContent: @js(\App\Support\SectionContent::toHtml($activeSection->content)),
+                        references: @js($this->referencesPayload),
+                        citationFormat: @js($report->citationFormat()),
+                    })"
                     x-init="$nextTick(() => mountEditor())"
+                    @references-updated.window="onReferencesUpdated($event.detail)"
                     style="counter-reset: section {{ $this->activeSectionNumber }}"
                     class="rounded-lg bg-white shadow-sm ring-1 ring-gray-200"
                 >
                     {{-- Title + save --}}
                     <div class="flex flex-wrap items-center gap-2 border-b border-gray-200 px-4 py-2">
-                        <span class="inline-flex h-7 shrink-0 items-center rounded-md bg-indigo-50 px-2 text-sm font-semibold text-indigo-700" title="Section number">
-                            {{ $this->activeSectionNumber }}
-                        </span>
+                        @if ($activeSection->isFrontPage())
+                            <span class="inline-flex h-7 shrink-0 items-center rounded-md bg-amber-50 px-2 text-xs font-semibold text-amber-800" title="Front-matter page — shown before the contents">
+                                Front page
+                            </span>
+                        @else
+                            <span class="inline-flex h-7 shrink-0 items-center rounded-md bg-indigo-50 px-2 text-sm font-semibold text-indigo-700" title="Section number">
+                                {{ $this->activeSectionNumber }}
+                            </span>
+                        @endif
                         <input type="text" wire:model="editTitle" placeholder="Section title" class="min-w-50 flex-1 rounded-md px-2 py-1 text-sm font-semibold ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
                         <div class="ml-auto flex items-center gap-2">
                             <span x-show="dirty" class="text-xs text-amber-600">Unsaved changes</span>
@@ -237,6 +378,9 @@ new class extends Component
                         <button type="button" x-on:mousedown.prevent x-on:click="insertTable()" class="toolbar-btn font-medium text-indigo-600" title="Insert a table with a name">Insert table</button>
                         <input type="file" x-ref="imageInput" accept="image/*" class="hidden" x-on:change="insertImage($event)">
                         <span class="toolbar-divider"></span>
+                        <button type="button" x-on:mousedown.prevent x-on:click="openCitePicker()" class="toolbar-btn font-medium text-purple-700" title="Insert a citation (ref here) — pick which reference to use">Cite</button>
+                        <button type="button" x-on:mousedown.prevent x-on:click="insertReferencesList()" class="toolbar-btn font-medium text-purple-700" title="Insert the auto-generated references list — lists only the references used in this report">References list</button>
+                        <span class="toolbar-divider"></span>
                         <span class="se-group-label">Table:</span>
                         <button type="button" x-on:mousedown.prevent x-on:click="addRow()" class="toolbar-btn" title="Add a row below the cursor">+ Row</button>
                         <button type="button" x-on:mousedown.prevent x-on:click="deleteRow()" class="toolbar-btn" title="Delete the current row">&minus; Row</button>
@@ -250,9 +394,35 @@ new class extends Component
                         <button type="button" x-on:mousedown.prevent x-on:click="resizeImage(10)" class="toolbar-btn" title="Click an image, then enlarge it">Larger</button>
                     </div>
 
+                    {{-- Citation picker --}}
+                    <div x-show="citePickerOpen" x-cloak x-on:click.outside="closeCitePicker()" class="border-b border-purple-100 bg-purple-50 px-4 py-3">
+                        <div class="flex items-center justify-between">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-purple-700">Insert citation</p>
+                            <button type="button" x-on:click="closeCitePicker()" class="text-xs text-purple-700 hover:text-purple-900">Close</button>
+                        </div>
+                        <template x-if="references.length === 0">
+                            <p class="mt-2 text-xs text-gray-600">No references yet — add one via <em>Manage References</em>.</p>
+                        </template>
+                        <ul class="mt-2 max-h-48 space-y-1 overflow-y-auto">
+                            <template x-for="reference in references" :key="reference.id">
+                                <li>
+                                    <button
+                                        type="button"
+                                        x-on:mousedown.prevent
+                                        x-on:click="insertCitation(reference.id)"
+                                        class="flex w-full items-center justify-between rounded-md bg-white px-3 py-1.5 text-left text-xs ring-1 ring-purple-200 hover:bg-purple-100"
+                                    >
+                                        <span x-text="reference.label" class="truncate pr-3"></span>
+                                        <span class="shrink-0 font-mono text-[11px] text-purple-700" x-text="reference.inline[citationFormat] || ''"></span>
+                                    </button>
+                                </li>
+                            </template>
+                        </ul>
+                    </div>
+
                     {{-- Editable area --}}
                     <div wire:ignore>
-                        <div x-ref="content" contenteditable="true" spellcheck="true" class="se-content"></div>
+                        <div x-ref="content" contenteditable="true" spellcheck="true" class="se-content {{ $activeSection->isFrontPage() ? 'se-front-page' : '' }}"></div>
                     </div>
                 </div>
             @else

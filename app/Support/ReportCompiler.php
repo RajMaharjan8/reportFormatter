@@ -2,12 +2,14 @@
 
 namespace App\Support;
 
+use App\Models\Reference;
 use App\Models\Report;
 use App\Models\Section;
 use DOMDocument;
 use DOMElement;
 use DOMNodeList;
 use DOMXPath;
+use Illuminate\Database\Eloquent\Collection;
 
 /**
  * Compiles a report into the data a paginated document needs:
@@ -23,6 +25,9 @@ class ReportCompiler
     /** @var list<array{number: string, marker: string, title: string, id: string, html: string}> */
     protected array $sections = [];
 
+    /** @var list<array{title: string, id: string, html: string}> */
+    protected array $frontMatter = [];
+
     /** @var list<array{level: int, number: string, marker: string, label: string, id: string}> */
     protected array $contents = [];
 
@@ -36,7 +41,22 @@ class ReportCompiler
 
     protected int $tableCount = 0;
 
-    public function __construct(protected Report $report) {}
+    protected CitationFormatter $citationFormatter;
+
+    /** @var Collection<int, Reference> */
+    protected Collection $references;
+
+    /** @var array<int, true> Reference ids that appear in the body text. */
+    protected array $usedReferenceIds = [];
+
+    public function __construct(protected Report $report)
+    {
+        $this->references = $report->references()->get();
+        $this->citationFormatter = new CitationFormatter(
+            $report->citationFormat(),
+            $this->references,
+        );
+    }
 
     public static function for(Report $report): self
     {
@@ -48,6 +68,18 @@ class ReportCompiler
         $sectionIndex = 0;
 
         foreach ($this->report->sections as $section) {
+            // Custom front-matter pages render before the contents — they are
+            // not numbered and do not appear in the Table of Contents.
+            if ($section->placement === 'front') {
+                $this->frontMatter[] = [
+                    'title' => (string) $section->title,
+                    'id' => 'front-'.$section->id,
+                    'html' => $this->processFrontPage($section),
+                ];
+
+                continue;
+            }
+
             $sectionIndex++;
             $sectionAnchor = 'sec-'.$section->id;
             $marker = $this->sectionMarker($sectionIndex);
@@ -89,6 +121,17 @@ class ReportCompiler
         return $this->sections;
     }
 
+    /** @return list<array{title: string, id: string, html: string}> */
+    public function frontMatter(): array
+    {
+        return $this->frontMatter;
+    }
+
+    public function hasFrontMatter(): bool
+    {
+        return $this->frontMatter !== [];
+    }
+
     /** @return list<array{level: int, number: string, marker: string, label: string, id: string}> */
     public function contents(): array
     {
@@ -117,6 +160,40 @@ class ReportCompiler
         return $this->tables !== [];
     }
 
+    /**
+     * Prepare a front-matter page's HTML: blank paragraphs are stripped, but
+     * headings, figures and tables are left unnumbered and out of the report's
+     * counters since front pages sit before the contents.
+     */
+    protected function processFrontPage(Section $section): string
+    {
+        $html = SectionContent::toHtml($section->content);
+
+        if (trim($html) === '') {
+            return '';
+        }
+
+        $document = new DOMDocument;
+        libxml_use_internal_errors(true);
+        $document->loadHTML(
+            '<?xml encoding="UTF-8"><div id="report-root">'.$html.'</div>',
+            LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD
+        );
+        libxml_clear_errors();
+
+        $root = $document->getElementById('report-root');
+
+        if (! $root instanceof DOMElement) {
+            return $html;
+        }
+
+        $this->removeEmptyParagraphs($document);
+        $this->renderCitations($document);
+        $this->renderReferencesPlaceholder($document);
+
+        return $this->innerHtml($root);
+    }
+
     protected function processSection(Section $section, int $sectionIndex): string
     {
         $html = SectionContent::toHtml($section->content);
@@ -143,6 +220,8 @@ class ReportCompiler
         $this->numberHeadings($document, $section, $sectionIndex);
         $this->numberFigures($document, (string) $section->title);
         $this->numberTables($document, (string) $section->title);
+        $this->renderCitations($document);
+        $this->renderReferencesPlaceholder($document);
 
         return $this->innerHtml($root);
     }
@@ -345,5 +424,136 @@ class ReportCompiler
         }
 
         return $html;
+    }
+
+    /**
+     * Replace every `<span class="ref-cite" data-ref-id="X">` with the inline
+     * citation for the current format, and track which references appear so
+     * the bibliography lists only the cited ones.
+     */
+    protected function renderCitations(DOMDocument $document): void
+    {
+        $xpath = new DOMXPath($document);
+        $nodes = $xpath->query('//span[contains(concat(" ", normalize-space(@class), " "), " ref-cite ")]');
+
+        if (! $nodes instanceof DOMNodeList) {
+            return;
+        }
+
+        foreach (iterator_to_array($nodes) as $span) {
+            if (! $span instanceof DOMElement) {
+                continue;
+            }
+
+            $id = (int) $span->getAttribute('data-ref-id');
+            $reference = $this->references->firstWhere('id', $id);
+
+            $text = $reference instanceof Reference
+                ? $this->citationFormatter->inline($reference)
+                : '[?]';
+
+            if (! $reference instanceof Reference) {
+                $span->parentNode?->replaceChild($document->createTextNode($text), $span);
+
+                continue;
+            }
+
+            $this->usedReferenceIds[(int) $reference->id] = true;
+
+            // Wrap the citation in an anchor so the reader can jump to the
+            // matching bibliography entry. The target id is set later when the
+            // references list is rendered.
+            $anchor = $document->createElement('a');
+            $anchor->setAttribute('href', '#ref-'.$reference->id);
+            $anchor->setAttribute('class', 'ref-cite-link');
+            $anchor->appendChild($document->createTextNode($text));
+
+            $span->parentNode?->replaceChild($anchor, $span);
+        }
+    }
+
+    /**
+     * Replace the `[data-references-list]` placeholder element with a
+     * bibliography block listing only the references that were cited.
+     */
+    protected function renderReferencesPlaceholder(DOMDocument $document): void
+    {
+        $xpath = new DOMXPath($document);
+        $nodes = $xpath->query('//*[@data-references-list]');
+
+        if (! $nodes instanceof DOMNodeList || $nodes->length === 0) {
+            return;
+        }
+
+        $html = $this->buildReferencesHtml();
+
+        foreach (iterator_to_array($nodes) as $node) {
+            if (! $node instanceof DOMElement || $node->parentNode === null) {
+                continue;
+            }
+
+            $wrapper = $this->parseFragment($document, $html);
+
+            if ($wrapper === null) {
+                continue;
+            }
+
+            $node->parentNode->replaceChild($wrapper, $node);
+        }
+    }
+
+    /**
+     * Build the HTML for the bibliography block — only references that were
+     * cited in the body are included, sorted alphabetically by first author.
+     */
+    public function buildReferencesHtml(): string
+    {
+        $usedIds = array_keys($this->usedReferenceIds);
+        $used = $this->references->filter(fn (Reference $r) => \in_array((int) $r->id, $usedIds, true));
+        $sorted = $used->sortBy(fn (Reference $r) => $r->sortKey())->values();
+
+        if ($sorted->isEmpty()) {
+            return '<div class="report-references"><p class="report-references-empty"><em>No references cited yet.</em></p></div>';
+        }
+
+        $html = '<div class="report-references">';
+
+        foreach ($sorted as $reference) {
+            $marker = $this->citationFormatter->bibliographyMarker($reference);
+            $entry = $this->citationFormatter->bibliography($reference);
+            $html .= '<p class="report-reference" id="ref-'.$reference->id.'">'.$marker.$entry.'</p>';
+        }
+
+        return $html.'</div>';
+    }
+
+    /**
+     * Parse an HTML snippet and import the wrapping element into $document.
+     */
+    protected function parseFragment(DOMDocument $document, string $html): ?DOMElement
+    {
+        $temp = new DOMDocument;
+        libxml_use_internal_errors(true);
+        $temp->loadHTML(
+            '<?xml encoding="UTF-8"><div id="ref-wrap">'.$html.'</div>',
+            LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD
+        );
+        libxml_clear_errors();
+
+        $wrap = $temp->getElementById('ref-wrap');
+
+        if (! $wrap instanceof DOMElement) {
+            return null;
+        }
+
+        $first = $wrap->firstChild;
+
+        if (! $first instanceof DOMElement) {
+            return null;
+        }
+
+        $imported = $document->importNode($first, true);
+
+        return $imported instanceof DOMElement ? $imported : null;
     }
 }

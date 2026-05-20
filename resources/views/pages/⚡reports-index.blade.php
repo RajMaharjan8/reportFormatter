@@ -51,10 +51,11 @@ new class extends Component
                                     {{ $report->student_name ?: 'Untitled draft' }}
                                 </h2>
                                 <p class="mt-0.5 truncate text-sm text-gray-600">
-                                    @if ($report->module_code || $report->module_title)
-                                        {{ trim($report->module_code.' '.$report->module_title) }}
+                                    @php($subtitle = $report->cover_format === 'tu' ? trim((string) $report->title) : trim($report->module_code.' '.$report->module_title))
+                                    @if (filled($subtitle))
+                                        {{ $subtitle }}
                                     @else
-                                        <span class="text-gray-400">No module set yet</span>
+                                        <span class="text-gray-400">{{ $report->cover_format === 'tu' ? 'No assignment title yet' : 'No module set yet' }}</span>
                                     @endif
                                 </p>
                                 <p class="mt-1 text-xs text-gray-400">

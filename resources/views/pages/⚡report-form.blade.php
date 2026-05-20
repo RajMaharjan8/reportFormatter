@@ -8,13 +8,21 @@ new class extends Component
 {
     public ?Report $report = null;
 
-    #[Validate('required|string|max:50')]
+    public string $cover_format = 'london_met';
+
+    public string $tu_college_name = '';
+
+    public string $tu_roll_number = '';
+
+    public string $tu_submitted_to_position = '';
+
+    #[Validate('nullable|string|max:50')]
     public string $module_code = '';
 
-    #[Validate('required|string|max:255')]
+    #[Validate('nullable|string|max:255')]
     public string $module_title = '';
 
-    #[Validate('required|string|max:255')]
+    #[Validate('nullable|string|max:255')]
     public string $title = '';
 
     #[Validate('nullable|string|max:5000')]
@@ -32,13 +40,13 @@ new class extends Component
     #[Validate('nullable|string|max:20')]
     public string $academic_year = '';
 
-    #[Validate('required|string|max:255')]
+    #[Validate('nullable|string|max:255')]
     public string $student_name = '';
 
-    #[Validate('required|string|max:50')]
+    #[Validate('nullable|string|max:50')]
     public string $london_id = '';
 
-    #[Validate('required|string|max:255')]
+    #[Validate('nullable|string|max:255')]
     public string $college_id = '';
 
     #[Validate('nullable|date')]
@@ -54,6 +62,10 @@ new class extends Component
     {
         if ($report && $report->exists) {
             $this->report = $report;
+            $this->cover_format = $report->cover_format ?: 'london_met';
+            $this->tu_college_name = (string) $report->tu_college_name;
+            $this->tu_roll_number = (string) $report->tu_roll_number;
+            $this->tu_submitted_to_position = (string) $report->tu_submitted_to_position;
             $this->module_code = (string) $report->module_code;
             $this->module_title = (string) $report->module_title;
             $this->title = (string) $report->title;
@@ -71,9 +83,81 @@ new class extends Component
         }
     }
 
+    /**
+     * Every cover field, all optional — the baseline for drafts.
+     *
+     * @return array<string, string>
+     */
+    protected function draftRules(): array
+    {
+        return [
+            'cover_format' => 'required|in:london_met,tu',
+            'tu_college_name' => 'nullable|string|max:255',
+            'tu_roll_number' => 'nullable|string|max:50',
+            'tu_submitted_to_position' => 'nullable|string|max:255',
+            'module_code' => 'nullable|string|max:50',
+            'module_title' => 'nullable|string|max:255',
+            'title' => 'nullable|string|max:255',
+            'abstract' => 'nullable|string|max:5000',
+            'section_label' => 'nullable|string|max:30',
+            'assessment_type' => 'nullable|string|max:100',
+            'semester' => 'nullable|string|max:50',
+            'academic_year' => 'nullable|string|max:20',
+            'student_name' => 'nullable|string|max:255',
+            'london_id' => 'nullable|string|max:50',
+            'college_id' => 'nullable|string|max:255',
+            'assignment_due_date' => 'nullable|date',
+            'submission_date' => 'nullable|date',
+            'submitted_to' => 'nullable|string|max:255',
+        ];
+    }
+
+    /**
+     * Validation rules for a finished cover, scoped to the chosen format.
+     *
+     * @return array<string, string>
+     */
+    protected function coverRules(): array
+    {
+        $required = $this->cover_format === 'tu'
+            ? [
+                'tu_college_name' => 'required|string|max:255',
+                'title' => 'required|string|max:255',
+                'student_name' => 'required|string|max:255',
+                'tu_roll_number' => 'required|string|max:50',
+            ]
+            : [
+                'module_code' => 'required|string|max:50',
+                'module_title' => 'required|string|max:255',
+                'title' => 'required|string|max:255',
+                'student_name' => 'required|string|max:255',
+                'london_id' => 'required|string|max:50',
+                'college_id' => 'required|string|max:255',
+            ];
+
+        return array_merge($this->draftRules(), $required);
+    }
+
+    /**
+     * Turn empty date strings into null so the date columns accept them.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    protected function normalizeDates(array $data): array
+    {
+        foreach (['assignment_due_date', 'submission_date'] as $field) {
+            if (($data[$field] ?? null) === '') {
+                $data[$field] = null;
+            }
+        }
+
+        return $data;
+    }
+
     public function save()
     {
-        $data = $this->validate();
+        $data = $this->normalizeDates($this->validate($this->coverRules()));
 
         $report = $this->report
             ? tap($this->report)->update($data)
@@ -89,22 +173,7 @@ new class extends Component
      */
     public function saveDraft()
     {
-        $data = $this->validate([
-            'module_code' => 'nullable|string|max:50',
-            'module_title' => 'nullable|string|max:255',
-            'title' => 'nullable|string|max:255',
-            'abstract' => 'nullable|string|max:5000',
-            'section_label' => 'nullable|string|max:30',
-            'assessment_type' => 'nullable|string|max:100',
-            'semester' => 'nullable|string|max:50',
-            'academic_year' => 'nullable|string|max:20',
-            'student_name' => 'nullable|string|max:255',
-            'london_id' => 'nullable|string|max:50',
-            'college_id' => 'nullable|string|max:255',
-            'assignment_due_date' => 'nullable|date',
-            'submission_date' => 'nullable|date',
-            'submitted_to' => 'nullable|string|max:255',
-        ]);
+        $data = $this->normalizeDates($this->validate($this->draftRules()));
 
         $report = $this->report
             ? tap($this->report)->update($data)
@@ -133,7 +202,13 @@ new class extends Component
             <h1 class="text-3xl font-semibold text-gray-900">
                 {{ $this->isEditing() ? 'Edit Cover Page' : 'Assignment Cover Page Generator' }}
             </h1>
-            <p class="mt-2 text-sm text-gray-600">Islington College &middot; London Metropolitan University</p>
+            <p class="mt-2 text-sm text-gray-600">
+                @if ($cover_format === 'tu')
+                    Tribhuvan University
+                @else
+                    Islington College &middot; London Metropolitan University
+                @endif
+            </p>
         </div>
 
         @if (session('draft-saved'))
@@ -144,13 +219,29 @@ new class extends Component
 
         <form wire:submit="save" class="space-y-8 rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200 sm:p-8">
             <section>
+                <h2 class="text-base font-semibold text-gray-900">Cover format</h2>
+
+                <div class="mt-4">
+                    <label for="cover_format" class="block text-sm font-medium text-gray-700">Choose a cover page style</label>
+                    <select id="cover_format" wire:model.live="cover_format" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <option value="london_met">London Metropolitan University</option>
+                        <option value="tu">Tribhuvan University (TU)</option>
+                    </select>
+                    <p class="mt-1 text-xs text-gray-500">This decides which cover layout and fields are used.</p>
+                    @error('cover_format') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                </div>
+            </section>
+
+            <section>
                 <h2 class="text-base font-semibold text-gray-900">Report</h2>
 
                 <div class="mt-4 grid grid-cols-1 gap-4">
                     <div>
-                        <label for="title" class="block text-sm font-medium text-gray-700">Report title <span class="text-red-500">*</span></label>
-                        <input type="text" id="title" wire:model="title" placeholder="e.g. Amazon's Fulfilment Network" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                        <p class="mt-1 text-xs text-gray-500">Shown on the title page and used as the report heading.</p>
+                        <label for="title" class="block text-sm font-medium text-gray-700">
+                            {{ $cover_format === 'tu' ? 'Assignment title' : 'Report title' }} <span class="text-red-500">*</span>
+                        </label>
+                        <input type="text" id="title" wire:model="title" placeholder="{{ $cover_format === 'tu' ? 'e.g. Energy, Finance and Economics — Assignment No. 10' : "e.g. Amazon's Fulfilment Network" }}" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <p class="mt-1 text-xs text-gray-500">Shown on the cover and title page, and used as the report heading.</p>
                         @error('title') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
                     </div>
 
@@ -169,6 +260,62 @@ new class extends Component
                 </div>
             </section>
 
+            @if ($cover_format === 'tu')
+            <section>
+                <h2 class="text-base font-semibold text-gray-900">College</h2>
+
+                <div class="mt-4">
+                    <label for="tu_college_name" class="block text-sm font-medium text-gray-700">College name <span class="text-red-500">*</span></label>
+                    <textarea id="tu_college_name" wire:model="tu_college_name" rows="2" placeholder="e.g. Institute of Engineering&#10;Pulchowk Campus" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+                    <p class="mt-1 text-xs text-gray-500">Appears under "Tribhuvan University" on the cover. Use a new line for the campus.</p>
+                    @error('tu_college_name') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                </div>
+            </section>
+
+            <section>
+                <h2 class="text-base font-semibold text-gray-900">Submitted by</h2>
+
+                <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div class="sm:col-span-2">
+                        <label for="tu_student_name" class="block text-sm font-medium text-gray-700">Name <span class="text-red-500">*</span></label>
+                        <input type="text" id="tu_student_name" wire:model="student_name" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        @error('student_name') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                    </div>
+
+                    <div>
+                        <label for="tu_roll_number" class="block text-sm font-medium text-gray-700">Roll number <span class="text-red-500">*</span></label>
+                        <input type="text" id="tu_roll_number" wire:model="tu_roll_number" placeholder="e.g. 073/MSREE/519" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        @error('tu_roll_number') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                    </div>
+
+                    <div>
+                        <label for="tu_submission_date" class="block text-sm font-medium text-gray-700">Date</label>
+                        <input type="date" id="tu_submission_date" wire:model="submission_date" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        @error('submission_date') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <h2 class="text-base font-semibold text-gray-900">Submitted to</h2>
+
+                <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                        <label for="tu_submitted_to" class="block text-sm font-medium text-gray-700">Name</label>
+                        <input type="text" id="tu_submitted_to" wire:model="submitted_to" placeholder="e.g. Prof. Dr. Amrit Man Nakarmi" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        @error('submitted_to') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                    </div>
+
+                    <div>
+                        <label for="tu_submitted_to_position" class="block text-sm font-medium text-gray-700">Position</label>
+                        <input type="text" id="tu_submitted_to_position" wire:model="tu_submitted_to_position" placeholder="e.g. Department of Mechanical Engineering" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        @error('tu_submitted_to_position') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                    </div>
+                </div>
+            </section>
+            @endif
+
+            @if ($cover_format === 'london_met')
             <section>
                 <h2 class="text-base font-semibold text-gray-900">Module</h2>
 
@@ -257,6 +404,7 @@ new class extends Component
                     </div>
                 </div>
             </section>
+            @endif
 
             <div class="flex flex-wrap items-center justify-end gap-3 border-t border-gray-200 pt-6">
                 @if ($this->isEditing())

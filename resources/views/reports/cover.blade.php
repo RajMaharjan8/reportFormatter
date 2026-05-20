@@ -62,6 +62,41 @@
                     </div>
                 </details>
 
+                {{-- Page layout: margins + line spacing --}}
+                <details class="relative">
+                    <summary class="cursor-pointer rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-gray-300 hover:bg-gray-50">
+                        Page layout
+                    </summary>
+                    <div class="absolute right-0 z-20 mt-2 w-80 rounded-md bg-white p-4 text-left shadow-lg ring-1 ring-gray-200">
+                        <form method="POST" action="{{ route('reports.cover.settings', ['report' => $report]) }}">
+                            @csrf
+                            <p class="mb-2 text-xs font-semibold text-gray-700">Page margins (inches)</p>
+                            <p class="mb-2 text-[11px] text-gray-500">Default follows the standard rule — Top 1.0, Right 1.0, Bottom 1.0, Left 1.5 (for binding). Line spacing is fixed at 1.15.</p>
+
+                            <div class="grid grid-cols-2 gap-2">
+                                <label class="block">
+                                    <span class="block text-[11px] font-medium text-gray-600">Top</span>
+                                    <input type="number" step="any" min="0.25" max="3" name="margin_top" value="{{ number_format((float) $report->margin_top, 2) }}" class="mt-0.5 block w-full rounded-md px-2 py-1.5 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                </label>
+                                <label class="block">
+                                    <span class="block text-[11px] font-medium text-gray-600">Right</span>
+                                    <input type="number" step="any" min="0.25" max="3" name="margin_right" value="{{ number_format((float) $report->margin_right, 2) }}" class="mt-0.5 block w-full rounded-md px-2 py-1.5 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                </label>
+                                <label class="block">
+                                    <span class="block text-[11px] font-medium text-gray-600">Bottom</span>
+                                    <input type="number" step="any" min="0.25" max="3" name="margin_bottom" value="{{ number_format((float) $report->margin_bottom, 2) }}" class="mt-0.5 block w-full rounded-md px-2 py-1.5 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                </label>
+                                <label class="block">
+                                    <span class="block text-[11px] font-medium text-gray-600">Left</span>
+                                    <input type="number" step="any" min="0.25" max="3" name="margin_left" value="{{ number_format((float) $report->margin_left, 2) }}" class="mt-0.5 block w-full rounded-md px-2 py-1.5 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                </label>
+                            </div>
+
+                            <button type="submit" class="mt-3 w-full rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500">Save layout</button>
+                        </form>
+                    </div>
+                </details>
+
                 {{-- Page number position --}}
                 <details class="relative">
                     <summary class="cursor-pointer rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-gray-300 hover:bg-gray-50">
@@ -88,6 +123,6 @@
         </div>
     </div>
 
-    @include('reports.partials.cover-sheet')
+    @include($report->cover_format === 'tu' ? 'reports.partials.tu-cover-sheet' : 'reports.partials.cover-sheet')
 </body>
 </html>

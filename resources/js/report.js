@@ -21,8 +21,17 @@ function toRoman(value) {
     return result
 }
 
-function numberPages(container, align) {
+function numberPages(container, align, margins) {
     const pages = container.querySelectorAll('.pagedjs_page')
+
+    // Place the page number halfway down the bottom margin and inset it by the
+    // configured left/right margins so it lines up with the body content.
+    const bottomIn = (margins && Number(margins.bottom)) || 1
+    const leftIn = (margins && Number(margins.left)) || 1
+    const rightIn = (margins && Number(margins.right)) || 1
+    const bottomOffset = `${(bottomIn / 2).toFixed(2)}in`
+    const paddingLeft = `${leftIn.toFixed(2)}in`
+    const paddingRight = `${rightIn.toFixed(2)}in`
 
     let romanNumber = 1 // the cover counts as page i (never shown)
     let bodyNumber = 0
@@ -33,7 +42,14 @@ function numberPages(container, align) {
             return
         }
 
-        const isBody = page.querySelector('.report-bodymatter, .report-section') !== null
+        const isBody = page.querySelector('.report-section') !== null
+        const isFront = page.querySelector('.report-frontmatter') !== null
+
+        // Skip phantom/blank pages that carry no real content so the body
+        // numbering starts at 1 on the first section.
+        if (!isBody && !isFront) {
+            return
+        }
 
         let label
         if (isBody) {
@@ -51,7 +67,8 @@ function numberPages(container, align) {
         number.className = 'report-page-number'
         number.textContent = label
         number.style.cssText =
-            'position:absolute;bottom:11mm;left:0;right:0;padding:0 22mm;'
+            `position:absolute;bottom:${bottomOffset};left:0;right:0;`
+            + `padding:0 ${paddingRight} 0 ${paddingLeft};`
             + `text-align:${align};font-family:"Times New Roman",Times,serif;`
             + 'font-size:11pt;color:#111;'
         box.appendChild(number)
@@ -69,9 +86,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.body.classList.add('is-paginating')
 
     try {
+        const stylesheets = [...(window.reportStylesheets || [])]
+
+        // Per-report margin + line-spacing rules: turn the inline CSS string
+        // into a Blob URL so Paged.js can load it as if it were a real file.
+        if (typeof window.reportInlineCss === 'string' && window.reportInlineCss.trim() !== '') {
+            const blob = new Blob([window.reportInlineCss], { type: 'text/css' })
+            stylesheets.push(URL.createObjectURL(blob))
+        }
+
         const previewer = new Previewer()
-        await previewer.preview(source.innerHTML, window.reportStylesheets || [], target)
-        numberPages(target, window.reportPageAlign || 'right')
+        await previewer.preview(source.innerHTML, stylesheets, target)
+        numberPages(target, window.reportPageAlign || 'right', window.reportPageMargins)
     } catch (error) {
         console.error('Paged.js failed to render the report:', error)
         target.innerHTML =

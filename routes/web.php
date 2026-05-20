@@ -34,6 +34,10 @@ Route::post('/reports/{report}/cover/settings', function (Report $report, Reques
         'abstract' => 'nullable|string|max:5000',
         'section_label' => 'nullable|string|max:30',
         'page_number_align' => 'nullable|in:left,center,right',
+        'margin_top' => 'nullable|numeric|min:0.25|max:3',
+        'margin_right' => 'nullable|numeric|min:0.25|max:3',
+        'margin_bottom' => 'nullable|numeric|min:0.25|max:3',
+        'margin_left' => 'nullable|numeric|min:0.25|max:3',
     ]);
 
     $update = [];
@@ -47,6 +51,14 @@ Route::post('/reports/{report}/cover/settings', function (Report $report, Reques
         $update[$field] = $value === ''
             ? ($field === 'page_number_align' ? 'right' : null)
             : $value;
+    }
+
+    foreach (['margin_top', 'margin_right', 'margin_bottom', 'margin_left'] as $field) {
+        if (! $request->has($field)) {
+            continue;
+        }
+
+        $update[$field] = (float) $request->input($field);
     }
 
     $report->update($update);

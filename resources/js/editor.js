@@ -28,6 +28,9 @@ export function registerEditorComponent(Alpine) {
         dirty: false,
         savedRange: null,
         selectedImage: null,
+        references: Array.isArray(config.references) ? config.references : [],
+        citationFormat: config.citationFormat || 'london_met',
+        citePickerOpen: false,
 
         // Called once from the blade via x-init.
         mountEditor() {
@@ -39,6 +42,8 @@ export function registerEditorComponent(Alpine) {
 
             const html = (config.initialContent || '').trim()
             el.innerHTML = html !== '' ? html : '<p><br></p>'
+
+            this.refreshCitations()
 
             // Make Enter produce <p> blocks (consistent across browsers).
             try {
@@ -356,6 +361,143 @@ export function registerEditorComponent(Alpine) {
             cols[i].style.width = `${(wi + step).toFixed(2)}%`
             cols[j].style.width = `${(wj - step).toFixed(2)}%`
             this.dirty = true
+        },
+
+        // ---- Citations ------------------------------------------------------
+
+        /** Toggle the picker that lists this report's references. */
+        openCitePicker() {
+            this.saveSelection()
+            this.citePickerOpen = true
+        },
+
+        closeCitePicker() {
+            this.citePickerOpen = false
+        },
+
+        /**
+         * Insert a non-editable citation span at the cursor.
+         *
+         * Uses the Range API directly (not document.execCommand) so the inline
+         * span lands at the saved cursor position even when the picker has
+         * stolen focus, and never gets pushed into a new block by quirks in
+         * how some browsers treat `contenteditable="false"` with insertHTML.
+         */
+        insertCitation(referenceId) {
+            const reference = this.references.find((r) => r.id === referenceId)
+
+            if (!reference) {
+                return
+            }
+
+            const inline = (reference.inline && reference.inline[this.citationFormat]) || '[?]'
+
+            const el = this.$refs.content
+            el.focus()
+
+            const selection = window.getSelection()
+            let range = null
+
+            if (this.savedRange && el.contains(this.savedRange.startContainer)) {
+                range = this.savedRange
+                selection.removeAllRanges()
+                selection.addRange(range)
+            } else if (selection.rangeCount && el.contains(selection.getRangeAt(0).startContainer)) {
+                range = selection.getRangeAt(0)
+            } else {
+                // No usable cursor — drop the citation at the end of the last block.
+                const lastBlock = el.querySelector(':scope > :last-child') || el
+                range = document.createRange()
+                range.selectNodeContents(lastBlock)
+                range.collapse(false)
+                selection.removeAllRanges()
+                selection.addRange(range)
+            }
+
+            range.deleteContents()
+
+            const span = document.createElement('span')
+            span.className = 'ref-cite'
+            span.setAttribute('data-ref-id', String(reference.id))
+            span.setAttribute('contenteditable', 'false')
+            span.textContent = inline
+
+            const trailingSpace = document.createTextNode(' ')
+
+            // Insert in reverse so they end up in order: span, then space.
+            range.insertNode(trailingSpace)
+            range.insertNode(span)
+
+            // Place the cursor after the trailing space so typing continues inline.
+            range.setStartAfter(trailingSpace)
+            range.collapse(true)
+            selection.removeAllRanges()
+            selection.addRange(range)
+
+            this.savedRange = range
+            this.dirty = true
+            this.closeCitePicker()
+        },
+
+        /** Insert the placeholder that becomes the references list on render. */
+        insertReferencesList() {
+            this.$refs.content.focus()
+            const html =
+                '<div class="references-list-placeholder" data-references-list contenteditable="false">'
+                + 'References list (auto-generated — shows the references you actually cite)'
+                + '</div><p><br></p>'
+
+            document.execCommand('insertHTML', false, html)
+            this.dirty = true
+        },
+
+        /**
+         * Re-render every `.ref-cite` span using the current references map
+         * and format. Runs on mount and whenever the manager dispatches a
+         * `references-updated` event.
+         */
+        refreshCitations() {
+            if (!this.$refs.content) {
+                return
+            }
+
+            const lookup = new Map(this.references.map((r) => [String(r.id), r]))
+
+            this.$refs.content.querySelectorAll('span.ref-cite').forEach((span) => {
+                span.setAttribute('contenteditable', 'false')
+
+                const id = span.getAttribute('data-ref-id')
+                const reference = lookup.get(String(id))
+
+                if (!reference) {
+                    span.textContent = '[?]'
+                    return
+                }
+
+                const inline = (reference.inline && reference.inline[this.citationFormat]) || '[?]'
+                span.textContent = inline
+            })
+        },
+
+        /**
+         * Handle the Livewire event broadcast by the references manager — the
+         * payload is `{ references, format }`. Updates local state and
+         * rewrites all inline citations in place.
+         */
+        onReferencesUpdated(detail) {
+            if (!detail) {
+                return
+            }
+
+            if (Array.isArray(detail.references)) {
+                this.references = detail.references
+            }
+
+            if (typeof detail.format === 'string' && detail.format !== '') {
+                this.citationFormat = detail.format
+            }
+
+            this.refreshCitations()
         },
 
         getHTML() {

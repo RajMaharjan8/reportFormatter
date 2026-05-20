@@ -11,6 +11,8 @@
         $align = in_array($report->page_number_align, ['left', 'center', 'right'], true)
             ? $report->page_number_align
             : 'right';
+        $margins = $report->pageMargins();
+        $lineSpacing = $report->lineSpacing();
     @endphp
 
     <script>
@@ -21,6 +23,21 @@
             @json(asset('css/report.css').'?v='.filemtime(public_path('css/report.css'))),
         ];
         window.reportPageAlign = @json($align);
+        window.reportPageMargins = @json($margins);
+        /* Per-report margin + line-spacing rules — picked up by report.js which
+           turns this string into a Blob URL and appends it to the stylesheet
+           list passed to Paged.js, so it layers on top of report.css. */
+        window.reportInlineCss = `
+            @page {
+                margin:
+                    {{ number_format($margins['top'], 2) }}in
+                    {{ number_format($margins['right'], 2) }}in
+                    {{ number_format($margins['bottom'], 2) }}in
+                    {{ number_format($margins['left'], 2) }}in;
+            }
+            .report-doc { line-height: {{ number_format($lineSpacing, 2) }}; }
+            .report-content p { line-height: {{ number_format($lineSpacing, 2) }}; }
+        `;
     </script>
 
     <style>
@@ -64,7 +81,8 @@
     <div class="report-toolbar">
         <a href="{{ route('reports.sections', ['report' => $report]) }}">&larr; Back to editor</a>
         <div class="report-actions">
-            <a href="{{ route('reports.docx', ['report' => $report]) }}" class="report-download">Download Word</a>
+            {{-- Word download hidden for now --}}
+            {{-- <a href="{{ route('reports.docx', ['report' => $report]) }}" class="report-download">Download Word</a> --}}
             <button type="button" onclick="window.print()">Print / Save as PDF</button>
         </div>
     </div>
@@ -76,6 +94,52 @@
     <template id="report-source">
         <div class="report-doc">
             {{-- Cover page (plain CSS so Paged.js needs no Tailwind) --}}
+            @if ($report->cover_format === 'tu')
+            <div class="report-cover">
+                <div class="cover-sheet-plain tu-cover">
+                    <div>
+                        <h1 class="tu-cover-uni">TRIBHUVAN UNIVERSITY</h1>
+                        @if ($report->tu_college_name)
+                            <div class="tu-cover-college">{!! nl2br(e($report->tu_college_name)) !!}</div>
+                        @endif
+                    </div>
+
+                    <div class="tu-cover-logo">
+                        <img src="{{ asset('images/tu/tulogo.png') }}" alt="Tribhuvan University">
+                    </div>
+
+                    <div class="tu-cover-rule">
+                        <span></span><span></span><span></span>
+                    </div>
+
+                    @if ($report->title)
+                        <p class="tu-cover-title">{{ $report->title }}</p>
+                    @endif
+
+                    <div class="tu-cover-people">
+                        <div>
+                            <p class="tu-cover-label">SUBMITTED BY:</p>
+                            <p><strong>Name:</strong> {{ $report->student_name }}</p>
+                            @if ($report->tu_roll_number)
+                                <p><strong>Roll No:</strong> {{ $report->tu_roll_number }}</p>
+                            @endif
+                            @if ($report->submission_date)
+                                <p><strong>Date:</strong> {{ $report->submission_date->format('Y-m-d') }}</p>
+                            @endif
+                        </div>
+                        <div>
+                            <p class="tu-cover-label">SUBMITTED TO:</p>
+                            @if ($report->submitted_to)
+                                <p><strong>{{ $report->submitted_to }}</strong></p>
+                            @endif
+                            @if ($report->tu_submitted_to_position)
+                                <p><strong>{{ $report->tu_submitted_to_position }}</strong></p>
+                            @endif
+                        </div>
+                    </div>
+                </div>
+            </div>
+            @else
             <div class="report-cover">
                 <div class="cover-sheet-plain">
                     <div class="cover-logo-row">
@@ -122,11 +186,28 @@
                     </div>
                 </div>
             </div>
+            @endif
 
             {{-- Title page --}}
             <section class="report-frontmatter page-break report-title-page">
                 <h1 class="doc-title">{{ $report->title ?: $report->module_title }}</h1>
             </section>
+
+            {{-- Custom front pages (before the contents, unnumbered) --}}
+            @foreach ($compiler->frontMatter() as $page)
+                <section class="report-frontmatter page-break">
+                    @if (filled($page['title']))
+                        <h2 class="frontmatter-heading">{{ $page['title'] }}</h2>
+                    @endif
+                    <div class="report-content">
+                        @if (trim($page['html']) !== '')
+                            {!! $page['html'] !!}
+                        @else
+                            <p>No content yet.</p>
+                        @endif
+                    </div>
+                </section>
+            @endforeach
 
             {{-- Table of Contents --}}
             <section class="report-frontmatter page-break">
@@ -179,24 +260,22 @@
             @endif
 
             {{-- Body --}}
-            <div class="report-bodymatter">
-                @forelse ($compiler->sections() as $section)
-                    <section class="report-section page-break">
-                        <h1 class="section-title" id="{{ $section['id'] }}">{{ $section['marker'] }}&nbsp; {{ $section['title'] }}</h1>
-                        <div class="report-content">
-                            @if (trim($section['html']) !== '')
-                                {!! $section['html'] !!}
-                            @else
-                                <p>No content yet.</p>
-                            @endif
-                        </div>
-                    </section>
-                @empty
-                    <section class="report-section page-break">
-                        <p>No sections yet. Add sections in the editor to build the report.</p>
-                    </section>
-                @endforelse
-            </div>
+            @forelse ($compiler->sections() as $section)
+                <section class="report-bodymatter report-section page-break">
+                    <h1 class="section-title" id="{{ $section['id'] }}">{{ $section['marker'] }}&nbsp; {{ $section['title'] }}</h1>
+                    <div class="report-content">
+                        @if (trim($section['html']) !== '')
+                            {!! $section['html'] !!}
+                        @else
+                            <p>No content yet.</p>
+                        @endif
+                    </div>
+                </section>
+            @empty
+                <section class="report-bodymatter report-section page-break">
+                    <p>No sections yet. Add sections in the editor to build the report.</p>
+                </section>
+            @endforelse
         </div>
     </template>
 </body>
