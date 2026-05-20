@@ -44,6 +44,7 @@ export function registerEditorComponent(Alpine) {
             el.innerHTML = html !== '' ? html : '<p><br></p>'
 
             this.refreshCitations()
+            this.decorateReferencesPlaceholders()
 
             // Make Enter produce <p> blocks (consistent across browsers).
             try {
@@ -56,8 +57,49 @@ export function registerEditorComponent(Alpine) {
                 this.dirty = true
             })
 
-            // Click an image to select it for resizing.
-            el.addEventListener('click', (event) => this.selectImage(event))
+            el.addEventListener('click', (event) => {
+                const remove = event.target.closest && event.target.closest('.references-list-remove')
+
+                if (remove) {
+                    const placeholder = remove.closest('[data-references-list]')
+
+                    if (placeholder) {
+                        placeholder.remove()
+                        this.dirty = true
+                    }
+
+                    event.preventDefault()
+
+                    return
+                }
+
+                this.selectImage(event)
+            })
+        },
+
+        /**
+         * Add a × remove button to every references-list placeholder. The
+         * button is editor-only chrome — it's stripped back out before save.
+         */
+        decorateReferencesPlaceholders() {
+            if (!this.$refs.content) {
+                return
+            }
+
+            this.$refs.content.querySelectorAll('[data-references-list]').forEach((el) => {
+                if (el.querySelector('.references-list-remove')) {
+                    return
+                }
+
+                const button = document.createElement('button')
+                button.type = 'button'
+                button.className = 'references-list-remove'
+                button.setAttribute('contenteditable', 'false')
+                button.setAttribute('aria-label', 'Remove references list')
+                button.title = 'Remove references list'
+                button.textContent = '×'
+                el.appendChild(button)
+            })
         },
 
         /** Mark the clicked image as selected (so the resize buttons act on it). */
@@ -448,6 +490,7 @@ export function registerEditorComponent(Alpine) {
                 + '</div><p><br></p>'
 
             document.execCommand('insertHTML', false, html)
+            this.decorateReferencesPlaceholders()
             this.dirty = true
         },
 
@@ -505,12 +548,15 @@ export function registerEditorComponent(Alpine) {
                 return ''
             }
 
-            // The selection outline is editor-only — never save it.
-            this.$refs.content
-                .querySelectorAll('img.is-selected')
-                .forEach((img) => img.classList.remove('is-selected'))
+            // Editor-only chrome (selection outlines, remove buttons) is
+            // stripped on a clone so the live DOM stays interactive while
+            // the user waits for the save round-trip.
+            const clone = this.$refs.content.cloneNode(true)
 
-            return this.$refs.content.innerHTML
+            clone.querySelectorAll('img.is-selected').forEach((img) => img.classList.remove('is-selected'))
+            clone.querySelectorAll('.references-list-remove').forEach((button) => button.remove())
+
+            return clone.innerHTML
         },
 
         /** Persist the section through the given Livewire component. */
