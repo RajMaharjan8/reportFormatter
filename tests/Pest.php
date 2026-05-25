@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -47,4 +48,17 @@ expect()->extend('toBeOne', function () {
 function something()
 {
     // ..
+}
+
+/**
+ * Create a user and sign them in for the current test, returning the user so
+ * helpers can attach ownership of test fixtures (reports) to them.
+ */
+function loginAsTestUser(): User
+{
+    $user = User::factory()->create();
+
+    test()->actingAs($user);
+
+    return $user;
 }

@@ -1,37 +1,79 @@
 <?php
 
 use App\Models\Report;
+use App\Models\User;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
 use Livewire\Component;
 
 new class extends Component
 {
     /**
-     * Every saved report, newest activity first.
+     * The signed-in user's reports, newest activity first.
      *
      * @return Collection<int, Report>
      */
     public function getReportsProperty(): Collection
     {
-        return Report::withCount('sections')->latest('updated_at')->get();
+        return Auth::user()
+            ->reports()
+            ->withCount('sections')
+            ->latest('updated_at')
+            ->get();
+    }
+
+    public function getReportLimitProperty(): int
+    {
+        return User::MAX_REPORTS;
+    }
+
+    public function getCanCreateMoreProperty(): bool
+    {
+        return $this->reports->count() < $this->reportLimit;
     }
 
     public function deleteReport(int $reportId): void
     {
-        Report::whereKey($reportId)->delete();
+        $report = Report::whereKey($reportId)->firstOrFail();
+        $this->authorize('delete', $report);
+        $report->delete();
     }
 }; ?>
 
 <div class="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
     <div class="mx-auto max-w-4xl">
+        <div class="mb-6 flex items-center justify-between gap-4 text-sm">
+            <div class="text-gray-600">
+                Signed in as <span class="font-medium text-gray-900">{{ auth()->user()->email }}</span>
+            </div>
+            <form method="POST" action="{{ route('logout') }}">
+                @csrf
+                <button type="submit" class="text-gray-600 hover:text-gray-900 underline">Sign out</button>
+            </form>
+        </div>
+
         <div class="mb-8 flex items-end justify-between gap-4">
             <div>
                 <h1 class="text-3xl font-semibold text-gray-900">Your Reports</h1>
                 <p class="mt-2 text-sm text-gray-600">Islington College &middot; London Metropolitan University</p>
+                <p class="mt-1 text-xs text-gray-500">
+                    {{ $this->reports->count() }} of {{ $this->reportLimit }} reports used &middot; delete one to start another.
+                </p>
             </div>
-            <a href="{{ route('reports.create') }}" wire:navigate class="inline-flex shrink-0 items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
-                + New report
-            </a>
+            <div class="flex flex-wrap items-center gap-2">
+                <a href="{{ route('reports.check') }}" wire:navigate class="inline-flex shrink-0 items-center rounded-md bg-white px-4 py-2 text-sm font-semibold text-gray-900 ring-1 ring-gray-300 hover:bg-gray-50">
+                    Check My Report
+                </a>
+                @if ($this->canCreateMore)
+                    <a href="{{ route('reports.create') }}" wire:navigate class="inline-flex shrink-0 items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+                        + New report
+                    </a>
+                @else
+                    <span class="inline-flex shrink-0 items-center rounded-md bg-gray-200 px-4 py-2 text-sm font-semibold text-gray-500 cursor-not-allowed" title="Delete an existing report to create another.">
+                        + New report
+                    </span>
+                @endif
+            </div>
         </div>
 
         @if ($this->reports->isEmpty())

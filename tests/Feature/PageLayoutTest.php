@@ -5,6 +5,7 @@ use App\Models\Report;
 function makeReportForLayout(array $overrides = []): Report
 {
     return Report::create(array_merge([
+        'user_id' => auth()->id() ?? loginAsTestUser()->id,
         'cover_format' => 'london_met',
         'module_code' => 'MN7001NI',
         'module_title' => 'Operations Management',

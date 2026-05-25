@@ -5,14 +5,24 @@ namespace App\Models;
 use Database\Factories\ReportFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Storage;
 
 class Report extends Model
 {
     /** @use HasFactory<ReportFactory> */
     use HasFactory;
 
+    protected static function booted(): void
+    {
+        static::deleting(function (Report $report) {
+            $report->deleteLocalImages();
+        });
+    }
+
     protected $fillable = [
+        'user_id',
         'cover_format',
         'tu_college_name',
         'tu_roll_number',
@@ -86,6 +96,11 @@ class Report extends Model
         return max(0.25, min(3.0, $value));
     }
 
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+
     public function sections(): HasMany
     {
         return $this->hasMany(Section::class)->orderBy('order');
@@ -104,5 +119,36 @@ class Report extends Model
         $format = (string) ($this->reference_format ?? '');
 
         return in_array($format, ['ieee', 'apa', 'london_met'], true) ? $format : 'london_met';
+    }
+
+    /**
+     * Delete any local image files referenced from this report's section
+     * HTML before the DB cascade removes the section rows. Inline data-URL
+     * images live in the row itself, so this only matters for legacy or
+     * future <img src="/storage/..."> uploads.
+     */
+    protected function deleteLocalImages(): void
+    {
+        $disk = Storage::disk('public');
+
+        foreach ($this->sections()->get(['id', 'content']) as $section) {
+            foreach (self::extractPublicStoragePaths((string) $section->content) as $path) {
+                if ($disk->exists($path)) {
+                    $disk->delete($path);
+                }
+            }
+        }
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected static function extractPublicStoragePaths(string $html): array
+    {
+        if ($html === '' || ! preg_match_all('#<img[^>]+src=["\']\s*/?storage/([^"\']+)["\']#i', $html, $matches)) {
+            return [];
+        }
+
+        return array_values(array_unique($matches[1]));
     }
 }

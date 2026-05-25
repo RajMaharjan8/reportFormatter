@@ -6,6 +6,7 @@ use App\Support\ReportCompiler;
 function makeReport(): Report
 {
     return Report::create([
+        'user_id' => auth()->id() ?? loginAsTestUser()->id,
         'module_code' => 'MN7001NI',
         'module_title' => 'Operations and Technology Management',
         'title' => "Amazon's Fulfilment Network",

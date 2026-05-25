@@ -7,16 +7,29 @@ use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Str;
 
-#[Fillable(['name', 'email', 'password'])]
+#[Fillable(['name', 'email', 'password', 'google_id', 'avatar_url'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
+
+    public const MAX_REPORTS = 2;
+
+    public function reports(): HasMany
+    {
+        return $this->hasMany(Report::class);
+    }
+
+    public function hasReachedReportLimit(): bool
+    {
+        return $this->reports()->count() >= self::MAX_REPORTS;
+    }
 
     /**
      * Get the attributes that should be cast.

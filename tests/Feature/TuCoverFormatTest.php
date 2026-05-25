@@ -6,6 +6,7 @@ use Livewire\Livewire;
 function tuReport(array $overrides = []): Report
 {
     return Report::create(array_merge([
+        'user_id' => auth()->id() ?? loginAsTestUser()->id,
         'cover_format' => 'tu',
         'tu_college_name' => "Institute of Engineering\nPulchowk Campus",
         'tu_roll_number' => '073/MSREE/519',
@@ -18,6 +19,8 @@ function tuReport(array $overrides = []): Report
 }
 
 it('defaults the cover format to london_met', function () {
+    loginAsTestUser();
+
     $report = Report::create([
         'module_code' => 'MN7001NI',
         'module_title' => 'Operations Management',
@@ -55,7 +58,10 @@ it('renders the TU cover on the full report output', function () {
 });
 
 it('keeps the London Met cover for london_met reports', function () {
+    loginAsTestUser();
+
     $report = Report::create([
+        'user_id' => auth()->id(),
         'cover_format' => 'london_met',
         'module_code' => 'MN7001NI',
         'module_title' => 'Operations Management',
@@ -72,6 +78,8 @@ it('keeps the London Met cover for london_met reports', function () {
 });
 
 it('saves a TU report from the form without London Met fields', function () {
+    loginAsTestUser();
+
     Livewire::test('pages::report-form')
         ->set('cover_format', 'tu')
         ->set('tu_college_name', 'Institute of Engineering')
@@ -91,6 +99,8 @@ it('saves a TU report from the form without London Met fields', function () {
 });
 
 it('requires TU fields when the TU format is chosen', function () {
+    loginAsTestUser();
+
     Livewire::test('pages::report-form')
         ->set('cover_format', 'tu')
         ->call('save')
@@ -98,6 +108,8 @@ it('requires TU fields when the TU format is chosen', function () {
 });
 
 it('does not require London Met fields when the TU format is chosen', function () {
+    loginAsTestUser();
+
     Livewire::test('pages::report-form')
         ->set('cover_format', 'tu')
         ->call('save')

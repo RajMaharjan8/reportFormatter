@@ -19,6 +19,8 @@ new class extends Component
 
     public function mount(Report $report): void
     {
+        $this->authorize('update', $report);
+
         $this->report = $report;
 
         $requestedId = (int) request()->query('section');

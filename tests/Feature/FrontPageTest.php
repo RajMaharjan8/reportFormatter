@@ -7,6 +7,7 @@ use Livewire\Livewire;
 function reportForFrontPages(): Report
 {
     return Report::create([
+        'user_id' => auth()->id() ?? loginAsTestUser()->id,
         'cover_format' => 'london_met',
         'module_code' => 'MN7001NI',
         'module_title' => 'Operations Management',

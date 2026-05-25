@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Report;
+use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Validate;
 use Livewire\Component;
 
@@ -61,6 +62,8 @@ new class extends Component
     public function mount(?Report $report = null): void
     {
         if ($report && $report->exists) {
+            $this->authorize('update', $report);
+
             $this->report = $report;
             $this->cover_format = $report->cover_format ?: 'london_met';
             $this->tu_college_name = (string) $report->tu_college_name;
@@ -80,6 +83,8 @@ new class extends Component
             $this->assignment_due_date = $report->assignment_due_date?->format('Y-m-d') ?? '';
             $this->submission_date = $report->submission_date?->format('Y-m-d') ?? '';
             $this->submitted_to = (string) $report->submitted_to;
+        } else {
+            $this->authorize('create', Report::class);
         }
     }
 
@@ -157,11 +162,15 @@ new class extends Component
 
     public function save()
     {
+        if ($this->report === null) {
+            $this->authorize('create', Report::class);
+        }
+
         $data = $this->normalizeDates($this->validate($this->coverRules()));
 
         $report = $this->report
             ? tap($this->report)->update($data)
-            : Report::create($data);
+            : Auth::user()->reports()->create($data);
 
         $saved = $this->report ?? $report;
 
@@ -173,11 +182,15 @@ new class extends Component
      */
     public function saveDraft()
     {
+        if ($this->report === null) {
+            $this->authorize('create', Report::class);
+        }
+
         $data = $this->normalizeDates($this->validate($this->draftRules()));
 
         $report = $this->report
             ? tap($this->report)->update($data)
-            : Report::create($data);
+            : Auth::user()->reports()->create($data);
 
         $saved = $this->report ?? $report;
 
@@ -245,18 +258,22 @@ new class extends Component
                         @error('title') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
                     </div>
 
-                    <div>
-                        <label for="abstract" class="block text-sm font-medium text-gray-700">Abstract <span class="text-xs font-normal text-gray-400">(optional)</span></label>
-                        <textarea id="abstract" wire:model="abstract" rows="5" placeholder="A short summary of the report. Appears on its own page before the contents." class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
-                        @error('abstract') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
-                    </div>
+                    @if ($this->isEditing())
+                        <div>
+                            <label for="abstract" class="block text-sm font-medium text-gray-700">Abstract <span class="text-xs font-normal text-gray-400">(optional)</span></label>
+                            <textarea id="abstract" wire:model="abstract" rows="5" placeholder="A short summary of the report. Appears on its own page before the contents." class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+                            @error('abstract') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                        </div>
 
-                    <div>
-                        <label for="section_label" class="block text-sm font-medium text-gray-700">Section heading word</label>
-                        <input type="text" id="section_label" wire:model="section_label" placeholder="e.g. Chapter" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                        <p class="mt-1 text-xs text-gray-500">Leave blank to number sections <strong>1.</strong>, <strong>2.</strong> &hellip; Enter a word like <strong>Chapter</strong> to get <strong>Chapter 1</strong>, <strong>Chapter 2</strong>.</p>
-                        @error('section_label') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
-                    </div>
+                        <div>
+                            <label for="section_label" class="block text-sm font-medium text-gray-700">Section heading word</label>
+                            <input type="text" id="section_label" wire:model="section_label" placeholder="e.g. Chapter" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <p class="mt-1 text-xs text-gray-500">Leave blank to number sections <strong>1.</strong>, <strong>2.</strong> &hellip; Enter a word like <strong>Chapter</strong> to get <strong>Chapter 1</strong>, <strong>Chapter 2</strong>.</p>
+                            @error('section_label') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                        </div>
+                    @else
+                        <p class="text-xs text-gray-500">You can add an abstract and customize section numbering later from the cover page.</p>
+                    @endif
                 </div>
             </section>
 
