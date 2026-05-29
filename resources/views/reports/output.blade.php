@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ $report->title ?: $report->module_title }}</title>
 
+    @include('partials.pwa-head')
+
     @vite(['resources/js/report.js'])
 
     @php
@@ -13,7 +15,18 @@
             : 'right';
         $margins = $report->pageMargins();
         $lineSpacing = $report->lineSpacing();
+        $headingAlign = $report->headingAlign();
+        $headingTransform = $report->heading_uppercase ? 'uppercase' : 'none';
+        // "Edit pages" mode: only owners (update ability) and only when ?edit=1.
+        $canEdit = request()->user()?->can('update', $report) ?? false;
+        $editing = $canEdit && request()->boolean('edit');
     @endphp
+
+    @if ($editing)
+        {{-- Edit mode renders the raw (un-paginated) sheets, so it needs the
+             print stylesheet loaded directly rather than via Paged.js. --}}
+        <link rel="stylesheet" href="{{ asset('css/report.css') }}?v={{ filemtime(public_path('css/report.css')) }}">
+    @endif
 
     <script>
         /* Only the hand-written print stylesheet is handed to Paged.js — its
@@ -24,6 +37,11 @@
         ];
         window.reportPageAlign = @json($align);
         window.reportPageMargins = @json($margins);
+        /* The roman numeral printed on the first front page. TU reports number
+           their declaration page "i" (the cover is unnumbered and uncounted);
+           every other format keeps the cover as page i and starts front matter
+           at "ii". */
+        window.reportRomanStart = @json($report->cover_format === 'tu' ? 1 : 2);
         /* Per-report margin + line-spacing rules — picked up by report.js which
            turns this string into a Blob URL and appends it to the stylesheet
            list passed to Paged.js, so it layers on top of report.css. */
@@ -37,29 +55,35 @@
             }
             .report-doc { line-height: {{ number_format($lineSpacing, 2) }}; }
             .report-content p { line-height: {{ number_format($lineSpacing, 2) }}; }
+            .section-title { text-align: {{ $headingAlign }}; text-transform: {{ $headingTransform }}; }
+            .toc-level-1 .toc-label { text-transform: {{ $headingTransform }}; }
         `;
     </script>
 
     <style>
-        body { margin: 0; background: #ffffff; padding-top: 56px; font-family: system-ui, sans-serif; }
+        body { margin: 0; background: #ffffff; font-family: system-ui, sans-serif; }
 
         /* Outline each rendered page so it reads as a sheet on the white background */
         #report-render .pagedjs_page { box-shadow: 0 0 0 1px #e5e7eb; }
+        /* Center the sheets in the available width instead of hugging the left. */
+        #report-render .pagedjs_pages { display: flex; flex-direction: column; align-items: center; }
+        #report-render .pagedjs_page { margin-left: auto; margin-right: auto; }
 
         .report-toolbar {
-            position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+            position: sticky; top: 0; z-index: 50;
             display: flex; align-items: center; justify-content: space-between;
-            gap: 12px; padding: 10px 20px;
+            flex-wrap: wrap; gap: 8px 12px; padding: 10px 20px;
             background: #fff; border-bottom: 1px solid #d1d5db;
         }
         .report-toolbar a { color: #4f46e5; text-decoration: none; font-size: 14px; font-weight: 600; }
-        .report-actions { display: flex; align-items: center; gap: 10px; }
+        .report-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
         .report-toolbar button {
             background: #4f46e5; color: #fff; border: 0; border-radius: 6px;
             padding: 8px 16px; font-size: 14px; font-weight: 600; cursor: pointer;
         }
         .report-toolbar button:hover { background: #4338ca; }
         .report-toolbar .report-download {
+            display: inline-flex; align-items: center;
             border: 1px solid #4f46e5; border-radius: 6px;
             padding: 7px 16px; font-size: 14px; font-weight: 600;
         }
@@ -68,21 +92,109 @@
         .report-loading { padding: 80px 20px; text-align: center; color: #6b7280; font-size: 14px; }
         body.is-paginated .report-loading { display: none; }
 
+        /* Scaled to fit the viewport on small screens by report.js (zoom). */
         #report-render { padding: 24px 0; }
+
+        @media (max-width: 640px) {
+            .report-toolbar { padding: 8px 12px; gap: 6px; }
+            .report-toolbar a, .report-toolbar button, .report-toolbar .report-download { font-size: 13px; }
+            .report-toolbar button, .report-toolbar .report-download { padding: 6px 12px; }
+            .report-actions { gap: 6px; }
+            #report-render { padding: 12px 0; }
+        }
 
         @media print {
             body { background: #fff; padding-top: 0; }
             .report-toolbar, .report-loading { display: none !important; }
-            #report-render { padding: 0; }
+            #report-render { padding: 0; zoom: 1 !important; }
         }
+
+        /* ---- Edit pages mode ---- */
+        .edit-toolbar {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 12px; padding: 10px 16px; flex-wrap: wrap;
+            background: #fff; border-bottom: 1px solid #d1d5db;
+        }
+        .edit-toolbar a { color: #4f46e5; text-decoration: none; font-size: 14px; font-weight: 600; }
+        .edit-toolbar .edit-actions { display: flex; align-items: center; gap: 10px; }
+        .edit-toolbar button { border-radius: 6px; padding: 8px 16px; font-size: 14px; font-weight: 600; cursor: pointer; border: 0; }
+        .edit-toolbar .btn-save { background: #4f46e5; color: #fff; }
+        .edit-toolbar .btn-save:hover { background: #4338ca; }
+        .edit-toolbar .btn-reset { background: #fff; color: #b91c1c; border: 1px solid #fecaca; }
+        .edit-toolbar .btn-reset:hover { background: #fef2f2; }
+
+        .edit-hint { max-width: 210mm; margin: 8px auto -8px; padding: 0 8px; color: #6b7280; font-size: 13px; }
+        .edit-flash { max-width: 210mm; margin: 8px auto; padding: 8px 14px; border-radius: 6px; background: #ecfdf5; color: #065f46; font-size: 14px; font-weight: 500; }
+
+        .edit-doc { padding: 16px 12px 64px; }
+        /* Each editable block looks like an A4 sheet. */
+        .edit-doc .report-cover,
+        .edit-doc .tu-frontpage {
+            width: 210mm; min-height: 297mm; margin: 0 auto 24px; box-sizing: border-box;
+            background: #fff; box-shadow: 0 0 0 1px #e5e7eb, 0 8px 24px rgba(0,0,0,.10);
+        }
+        /* Front pages get the page margins as padding (cover supplies its own). */
+        .edit-doc .tu-frontpage { padding: 25.4mm 25.4mm 25.4mm 38.1mm; }
+        .edit-doc .report-cover { height: auto; overflow: visible; }
+        .edit-doc [contenteditable]:focus { outline: 2px solid #6366f1; outline-offset: 2px; }
+        .edit-doc [contenteditable] { cursor: text; }
     </style>
 </head>
 <body>
+@if ($editing)
+    {{-- ============ EDIT PAGES MODE ============ --}}
+    <div class="edit-toolbar">
+        <a href="{{ route('reports.output', ['report' => $report]) }}">&larr; Done editing</a>
+        <div class="edit-actions">
+            <form method="POST" action="{{ route('reports.front-overrides.reset', ['report' => $report]) }}" onsubmit="return confirm('Reset all pages back to the generated template? Your edits will be lost.');">
+                @csrf
+                <button type="submit" class="btn-reset">Reset all</button>
+            </form>
+            <button type="button" class="btn-save" onclick="saveEdits()">Save changes</button>
+        </div>
+    </div>
+
+    @if (session('cover-saved'))
+        <div class="edit-flash">{{ session('cover-saved') }}</div>
+    @endif
+
+    <p class="edit-hint">Click any page and type to edit it &mdash; press Enter for new lines/spacing. Click <strong>Save changes</strong> when done, or <strong>Reset all</strong> to restore the generated pages.</p>
+
+    <div class="edit-doc report-doc">
+        @include('reports.partials.output-cover', ['editing' => true])
+
+        @if ($report->cover_format === 'tu')
+            @include('reports.partials.tu-front-matter', ['editable' => true])
+        @endif
+    </div>
+
+    <form id="save-form" method="POST" action="{{ route('reports.front-overrides.save', ['report' => $report]) }}" style="display:none">
+        @csrf
+        @foreach ($report->editableFrontBlocks() as $block)
+            <textarea name="blocks[{{ $block }}]" data-input="{{ $block }}"></textarea>
+        @endforeach
+    </form>
+
+    <script>
+        function saveEdits() {
+            document.querySelectorAll('#save-form [data-input]').forEach(function (input) {
+                var block = document.querySelector('[data-block="' + input.dataset.input + '"]');
+                if (block) {
+                    input.value = block.innerHTML;
+                }
+            });
+            document.getElementById('save-form').submit();
+        }
+    </script>
+@else
+    {{-- ============ VIEW MODE ============ --}}
     <div class="report-toolbar">
         <a href="{{ route('reports.sections', ['report' => $report]) }}">&larr; Back to editor</a>
         <div class="report-actions">
-            {{-- Word download hidden for now --}}
-            {{-- <a href="{{ route('reports.docx', ['report' => $report]) }}" class="report-download">Download Word</a> --}}
+            @if ($canEdit)
+                <a href="{{ route('reports.output', ['report' => $report, 'edit' => 1]) }}" class="report-download">Edit pages</a>
+            @endif
             <button type="button" onclick="window.print()">Print / Save as PDF</button>
         </div>
     </div>
@@ -94,104 +206,17 @@
     <template id="report-source">
         <div class="report-doc">
             {{-- Cover page (plain CSS so Paged.js needs no Tailwind) --}}
+            @include('reports.partials.output-cover')
+
             @if ($report->cover_format === 'tu')
-            <div class="report-cover">
-                <div class="cover-sheet-plain tu-cover">
-                    <div>
-                        <h1 class="tu-cover-uni">TRIBHUVAN UNIVERSITY</h1>
-                        @if ($report->tu_college_name)
-                            <div class="tu-cover-college">{!! nl2br(e($report->tu_college_name)) !!}</div>
-                        @endif
-                    </div>
-
-                    <div class="tu-cover-logo">
-                        <img src="{{ asset('images/tu/tulogo.png') }}" alt="Tribhuvan University">
-                    </div>
-
-                    <div class="tu-cover-rule">
-                        <span></span><span></span><span></span>
-                    </div>
-
-                    @if ($report->title)
-                        <p class="tu-cover-title">{{ $report->title }}</p>
-                    @endif
-
-                    <div class="tu-cover-people">
-                        <div>
-                            <p class="tu-cover-label">SUBMITTED BY:</p>
-                            <p><strong>Name:</strong> {{ $report->student_name }}</p>
-                            @if ($report->tu_roll_number)
-                                <p><strong>Roll No:</strong> {{ $report->tu_roll_number }}</p>
-                            @endif
-                            @if ($report->submission_date)
-                                <p><strong>Date:</strong> {{ $report->submission_date->format('Y-m-d') }}</p>
-                            @endif
-                        </div>
-                        <div>
-                            <p class="tu-cover-label">SUBMITTED TO:</p>
-                            @if ($report->submitted_to)
-                                <p><strong>{{ $report->submitted_to }}</strong></p>
-                            @endif
-                            @if ($report->tu_submitted_to_position)
-                                <p><strong>{{ $report->tu_submitted_to_position }}</strong></p>
-                            @endif
-                        </div>
-                    </div>
-                </div>
-            </div>
+                {{-- Standard TU front matter: Declaration, Recommendation, Approval --}}
+                @include('reports.partials.tu-front-matter')
             @else
-            <div class="report-cover">
-                <div class="cover-sheet-plain">
-                    <div class="cover-logo-row">
-                        <img src="{{ asset('images/london-met-logo.png') }}" alt="London Metropolitan University">
-                    </div>
-
-                    <div class="cover-logo-college">
-                        <img src="{{ asset('images/islington-logo.png') }}" alt="Islington College">
-                    </div>
-
-                    <div class="cover-block">
-                        <p>Module Code &amp; Module Title</p>
-                        <p>{{ trim($report->module_code.' '.$report->module_title) }}</p>
-                    </div>
-
-                    <div class="cover-block">
-                        <p>{{ $report->assessment_type ?: 'Assessment Type' }}</p>
-                        <p>Semester</p>
-                        <p>{{ trim(($report->academic_year ?? '').' '.($report->semester ?? '')) ?: 'Semester' }}</p>
-                    </div>
-
-                    <div class="cover-block">
-                        <p>Student Name: {{ $report->student_name }}</p>
-                        <p>London Met ID: {{ $report->london_id }}</p>
-                        <p>College ID: {{ $report->college_id }}</p>
-                        @if ($report->assignment_due_date)
-                            <p>Assignment Due Date: {{ $report->assignment_due_date->format('l, F j, Y') }}</p>
-                        @endif
-                        @if ($report->submission_date)
-                            <p>Assignment Submission Date: {{ $report->submission_date->format('l, F j, Y') }}</p>
-                        @endif
-                        @if ($report->submitted_to)
-                            <p>Submitted To: {{ $report->submitted_to }}</p>
-                        @endif
-                    </div>
-
-                    <div class="cover-confirm">
-                        <p>
-                            I confirm that I understand my coursework needs to be submitted online via Google Classroom under
-                            the relevant module page before the deadline in order for my assignment to be accepted and marked.
-                            I am fully aware that late submissions will be treated as non-submission and a mark of zero will be
-                            awarded.
-                        </p>
-                    </div>
-                </div>
-            </div>
+                {{-- Title page --}}
+                <section class="report-frontmatter page-break report-title-page">
+                    <h1 class="doc-title">{{ $report->title ?: $report->module_title }}</h1>
+                </section>
             @endif
-
-            {{-- Title page --}}
-            <section class="report-frontmatter page-break report-title-page">
-                <h1 class="doc-title">{{ $report->title ?: $report->module_title }}</h1>
-            </section>
 
             {{-- Custom front pages (before the contents, unnumbered) --}}
             @foreach ($compiler->frontMatter() as $page)
@@ -278,5 +303,6 @@
             @endforelse
         </div>
     </template>
+@endif
 </body>
 </html>

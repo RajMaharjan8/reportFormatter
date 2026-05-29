@@ -90,77 +90,42 @@
 }
 
 /* ---- Tribhuvan University cover --------------------------- */
-.tu-cover {
-    justify-content: flex-start;
-    padding: 22mm 24mm 38mm;
-}
-
-.tu-cover-uni {
-    margin: 0;
-    font-size: 28pt;
-    font-weight: 700;
-    letter-spacing: 0.5pt;
-}
-
-.tu-cover-college {
-    margin-top: 2mm;
-    font-size: 19pt;
-    font-weight: 700;
-    line-height: 1.3;
-}
-
-.tu-cover-logo {
-    margin-top: 9mm;
-}
-
-.tu-cover-logo img {
-    height: 52mm;
-    width: auto;
-}
-
-.tu-cover-rule {
-    margin-top: 8mm;
+/* Shared by the standalone cover preview (cover.blade.php) and the full
+   report output (output.blade.php) via the tu-cover-sheet partial. */
+.tu-sheet {
+    box-sizing: border-box;
+    width: 210mm;
+    min-height: 297mm;
+    padding: 25mm 25mm 25mm;
     display: flex;
-    justify-content: center;
-    gap: 4mm;
+    flex-direction: column;
+    text-align: center;
+    font-family: "Times New Roman", Times, serif;
+    color: #111;
+    background: #fff;
 }
 
-.tu-cover-rule span {
-    display: block;
-    width: 1.6mm;
-    height: 32mm;
-    background: #5b9bd5;
-}
-
-.tu-cover-title {
-    margin: auto 0 0;
-    font-size: 17pt;
-    font-weight: 700;
-    text-decoration: underline;
-}
-
-.tu-cover-people {
-    margin-top: auto;
-    display: flex;
-    justify-content: space-between;
-    gap: 14mm;
-    text-align: left;
-    font-size: 12pt;
-}
-
-.tu-cover-people > div {
-    width: 48%;
-}
-
-.tu-cover-people p {
-    margin: 2pt 0;
-}
-
-.tu-cover-label {
-    margin-bottom: 3mm !important;
-    font-weight: 700;
-    text-decoration: underline;
-}
+.tu-uni { margin: 0; font-size: 22px; font-weight: 700; }
+.tu-institute { margin-top: 4px; font-size: 16px; font-weight: 600; line-height: 1.35; }
+.tu-campus { margin-top: 4px; font-size: 24px; font-weight: 700; }
+.tu-logo { margin: 18px auto 8px; }
+.tu-logo img { height: 130px; width: auto; object-fit: contain; }
+.tu-report-type { margin-top: 14px; font-size: 16px; font-weight: 700; }
+.tu-report-type .tu-on { font-weight: 500; }
+.tu-title { margin-top: 4px; font-size: 17px; font-weight: 700; }
+.tu-supervisor-label { margin-top: 18px; font-size: 15px; font-weight: 700; }
+.tu-supervisor-name { margin-top: 6px; font-size: 14px; }
+.tu-supervisor-detail { margin-top: 0; font-size: 14px; }
+.tu-degree { margin-top: 18px; font-size: 14px; line-height: 1.5; padding: 0 8mm; }
+.tu-block-label { margin-top: 14px; font-size: 15px; font-weight: 700; }
+.tu-students { margin-top: 4px; font-size: 14px; line-height: 1.6; }
+.tu-students p { margin: 0; }
+/* "Submitted by" and "Submitted to" should read as a tight pair, so the
+   second label and its lines sit close to the block above. */
+.tu-block-label + .tu-block-label,
+.tu-students + .tu-block-label { margin-top: 8px; }
+.tu-submitted-to { margin-top: 4px; font-size: 14px; line-height: 1.5; }
+.tu-date { margin-top: 16px; font-size: 14px; }
 
 /* ---- Title page ------------------------------------------- */
 .report-title-page {
@@ -174,6 +139,87 @@
 .report-title-page .doc-title {
     font-size: 20pt;
     font-weight: 700;
+}
+
+/* ---- Tribhuvan University front pages --------------------- */
+.tu-frontpage {
+    text-align: left;
+}
+
+/* Keep a whole front page together rather than spilling a stray line or
+   signature block onto the next sheet. */
+.tu-frontpage { break-inside: avoid; }
+
+.tu-fm-header {
+    text-align: center;
+    margin-bottom: 10mm;
+}
+
+.tu-fm-logo img {
+    height: 28mm;
+    width: auto;
+}
+
+.tu-fm-uni {
+    margin: 6mm 0 0;
+    font-size: 16pt;
+    font-weight: 700;
+}
+
+.tu-fm-line {
+    margin: 1mm 0 0;
+    font-size: 13pt;
+    font-weight: 700;
+}
+
+.tu-fm-heading {
+    text-align: center;
+    font-size: 16pt;
+    font-weight: 700;
+    margin: 0 0 10mm;
+}
+
+.tu-fm-body {
+    text-align: justify;
+    line-height: 1.6;
+    margin: 0;
+}
+
+.tu-fm-sign {
+    margin-top: 22mm;
+}
+
+/* A single signature block must never split across a page break. */
+.tu-fm-sign-block {
+    break-inside: avoid;
+}
+
+.tu-fm-sign-block p {
+    margin: 1mm 0;
+    font-weight: 700;
+}
+
+.tu-fm-sign-block + .tu-fm-sign-block {
+    margin-top: 8mm;
+}
+
+.tu-fm-dots {
+    font-weight: 400 !important;
+    letter-spacing: 1pt;
+}
+
+.tu-fm-grid {
+    margin-top: 16mm;
+    display: flex;
+    flex-wrap: wrap;
+    row-gap: 14mm;
+}
+
+.tu-fm-grid .tu-fm-sign-block {
+    width: 50%;
+    box-sizing: border-box;
+    padding-right: 6mm;
+    margin-top: 0;
 }
 
 /* ---- Front-matter headings -------------------------------- */
@@ -216,9 +262,9 @@
     transform: translateY(-2pt);
 }
 
-/* Real page number resolved by Paged.js from the anchor target */
-.toc-entry a::after {
-    content: target-counter(attr(href), page);
+/* Page number filled by report.js so it matches the label actually printed on
+   the target page (body restarts at 1), not Paged.js's absolute page count. */
+.toc-pageno {
     order: 3;
     white-space: nowrap;
 }

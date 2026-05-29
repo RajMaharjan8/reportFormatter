@@ -52,9 +52,15 @@ new class extends Component
             </form>
         </div>
 
-        <div class="mb-8 flex items-end justify-between gap-4">
+        @if (session('report-limit'))
+            <div class="mb-6 rounded-md bg-amber-50 p-4 text-sm text-amber-800 ring-1 ring-amber-200">
+                {{ session('report-limit') }}
+            </div>
+        @endif
+
+        <div class="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
-                <h1 class="text-3xl font-semibold text-gray-900">Your Reports</h1>
+                <h1 class="text-2xl font-semibold text-gray-900 sm:text-3xl">Your Reports</h1>
                 <p class="mt-2 text-sm text-gray-600">Islington College &middot; London Metropolitan University</p>
                 <p class="mt-1 text-xs text-gray-500">
                     {{ $this->reports->count() }} of {{ $this->reportLimit }} reports used &middot; delete one to start another.
@@ -112,6 +118,9 @@ new class extends Component
                                 </a>
                                 <a href="{{ route('reports.sections', $report) }}" wire:navigate class="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 ring-1 ring-gray-300 hover:bg-gray-50">
                                     Write content
+                                </a>
+                                <a href="{{ route('reports.live-check', $report) }}" wire:navigate class="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-indigo-700 ring-1 ring-indigo-300 hover:bg-indigo-50">
+                                    Format check
                                 </a>
                                 <a href="{{ route('reports.output', $report) }}" class="rounded-md bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-700">
                                     View report

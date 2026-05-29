@@ -134,6 +134,12 @@
     counter-reset: h2 figure table;
 }
 
+/* Tighter editor padding and bigger tap targets on phones. */
+@media (max-width: 640px) {
+    .se-content { padding: 1rem; min-height: 320px; }
+    .toolbar-btn { height: 2rem; min-width: 2rem; }
+}
+
 .se-content:empty::before {
     content: 'Start writing this section…';
     color: #9ca3af;

@@ -127,8 +127,9 @@ class ReferenceParser
         }
 
         $year = null;
-        if (preg_match('/\((\d{4})[a-z]?\)/', $raw, $m)) {
-            $year = $m[1];
+        // London Met / Harvard: "(YYYY)" — TU: ", YYYY,"
+        if (preg_match('/\((\d{4})[a-z]?\)|,\s*(\d{4})[a-z]?\s*[,.]/', $raw, $m)) {
+            $year = ! empty($m[1]) ? $m[1] : ($m[2] ?? null);
         }
 
         $hasUrl = (bool) preg_match('#https?://[^\s\]]+#', $raw);

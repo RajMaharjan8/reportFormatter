@@ -25,6 +25,13 @@ class Report extends Model
         'user_id',
         'cover_format',
         'tu_college_name',
+        'tu_institute',
+        'tu_department',
+        'tu_campus_address',
+        'tu_report_type',
+        'tu_supervisor_name',
+        'tu_degree',
+        'tu_students',
         'tu_roll_number',
         'tu_submitted_to_position',
         'module_code',
@@ -32,6 +39,9 @@ class Report extends Model
         'title',
         'abstract',
         'section_label',
+        'heading_align',
+        'heading_uppercase',
+        'front_overrides',
         'page_number_align',
         'reference_format',
         'margin_top',
@@ -51,6 +61,17 @@ class Report extends Model
         'arabic_start_page',
     ];
 
+    /**
+     * Mirror the column defaults so a freshly made (unsaved) model behaves the
+     * same as one reloaded from the database.
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'heading_align' => 'center',
+        'heading_uppercase' => false,
+    ];
+
     protected function casts(): array
     {
         return [
@@ -62,7 +83,44 @@ class Report extends Model
             'margin_bottom' => 'float',
             'margin_left' => 'float',
             'line_spacing' => 'float',
+            'tu_students' => 'array',
+            'heading_uppercase' => 'boolean',
+            'front_overrides' => 'array',
         ];
+    }
+
+    /**
+     * The front-matter blocks a user may hand-edit on the preview. The cover is
+     * always available; the three declaration pages only apply to TU reports.
+     *
+     * @return list<string>
+     */
+    public function editableFrontBlocks(): array
+    {
+        return $this->cover_format === 'tu'
+            ? ['cover', 'declaration', 'recommendation', 'certificate']
+            : ['cover'];
+    }
+
+    /**
+     * The user's saved HTML for a front-matter block, or null to fall back to
+     * the generated template.
+     */
+    public function frontOverride(string $key): ?string
+    {
+        $value = $this->front_overrides[$key] ?? null;
+
+        return is_string($value) && trim($value) !== '' ? $value : null;
+    }
+
+    /**
+     * The Heading 1 (section title) alignment, defaulting to centre.
+     */
+    public function headingAlign(): string
+    {
+        return in_array($this->heading_align, ['left', 'center', 'right'], true)
+            ? $this->heading_align
+            : 'center';
     }
 
     /**

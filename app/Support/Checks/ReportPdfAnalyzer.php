@@ -20,6 +20,7 @@ class ReportPdfAnalyzer
     {
         return [
             'london_met' => new LondonMetFormatChecker,
+            'tu' => new TuFormatChecker,
         ];
     }
 

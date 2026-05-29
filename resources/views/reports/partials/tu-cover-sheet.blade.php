@@ -1,72 +1,91 @@
-<style>
-    .tu-sheet {
-        box-sizing: border-box;
-        width: 210mm;
-        height: 297mm;
-        padding: 22mm 24mm 38mm;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-        text-align: center;
-        font-family: "Times New Roman", Times, serif;
-        color: #111;
-        background: #fff;
+@php
+    $students = is_array($report->tu_students) ? array_values(array_filter($report->tu_students, fn ($s) => is_array($s) && (filled($s['name'] ?? null) || filled($s['roll'] ?? null)))) : [];
+    if ($students === [] && filled($report->student_name)) {
+        $students[] = [
+            'name' => $report->student_name,
+            'roll' => $report->tu_roll_number,
+            'batch' => null,
+        ];
     }
-    .tu-uni { margin: 0; font-size: 32px; font-weight: 700; letter-spacing: .5px; }
-    .tu-college { margin-top: 6px; font-size: 22px; font-weight: 700; line-height: 1.3; }
-    .tu-logo { margin-top: 30px; }
-    .tu-logo img { height: 165px; width: auto; object-fit: contain; }
-    .tu-rule { margin-top: 26px; display: flex; justify-content: center; gap: 14px; }
-    .tu-rule span { display: block; width: 5px; height: 105px; background: #5b9bd5; }
-    .tu-title { margin: auto 0 0; font-size: 21px; font-weight: 700; text-decoration: underline; }
-    .tu-people {
-        margin-top: auto; display: flex; justify-content: space-between;
-        gap: 40px; text-align: left; font-size: 15px;
-    }
-    .tu-people > div { width: 48%; }
-    .tu-people p { margin: 3px 0; }
-    .tu-label { font-weight: 700; text-decoration: underline; margin-bottom: 10px !important; }
-</style>
+@endphp
 
 <main class="cover-sheet report-page tu-sheet mx-auto my-6 shadow-md ring-1 ring-gray-200">
-    <div>
-        <h1 class="tu-uni">TRIBHUVAN UNIVERSITY</h1>
-        @if ($report->tu_college_name)
-            <div class="tu-college">{!! nl2br(e($report->tu_college_name)) !!}</div>
-        @endif
-    </div>
+    <h1 class="tu-uni">Tribhuvan University</h1>
+
+    @if (filled($report->tu_institute))
+        <div class="tu-institute">{{ $report->tu_institute }}</div>
+    @endif
+
+    @if (filled($report->tu_college_name))
+        <div class="tu-campus">{!! nl2br(e($report->tu_college_name)) !!}</div>
+    @endif
 
     <div class="tu-logo">
         <img src="{{ asset('images/tu/tulogo.png') }}" alt="Tribhuvan University">
     </div>
 
-    <div class="tu-rule">
-        <span></span><span></span><span></span>
-    </div>
+    @if (filled($report->tu_report_type))
+        <div class="tu-report-type">
+            {{ $report->tu_report_type }}
+            <div class="tu-on">on</div>
+        </div>
+    @endif
 
-    @if ($report->title)
+    @if (filled($report->title))
         <p class="tu-title">{{ $report->title }}</p>
     @endif
 
-    <div class="tu-people">
-        <div>
-            <p class="tu-label">SUBMITTED BY:</p>
-            <p><strong>Name:</strong> {{ $report->student_name }}</p>
-            @if ($report->tu_roll_number)
-                <p><strong>Roll No:</strong> {{ $report->tu_roll_number }}</p>
-            @endif
-            @if ($report->submission_date)
-                <p><strong>Date:</strong> {{ $report->submission_date->format('Y-m-d') }}</p>
-            @endif
+    @if (filled($report->tu_supervisor_name) || filled($report->tu_submitted_to_position))
+        <p class="tu-supervisor-label">Under the Supervision of</p>
+
+        @if (filled($report->tu_supervisor_name))
+            <p class="tu-supervisor-name">{{ $report->tu_supervisor_name }}</p>
+        @endif
+
+        @if (filled($report->tu_department))
+            <p class="tu-supervisor-detail">{{ $report->tu_department }}</p>
+        @endif
+
+        @if (filled($report->tu_campus_address))
+            <p class="tu-supervisor-detail">{{ $report->tu_campus_address }}</p>
+        @endif
+    @endif
+
+    @if (filled($report->tu_degree))
+        <p class="tu-degree">In partial fulfillment of the requirements for the {{ $report->tu_degree }} of Tribhuvan University</p>
+    @endif
+
+    @if ($students !== [])
+        <p class="tu-block-label">Submitted by:</p>
+        <div class="tu-students">
+            @foreach ($students as $student)
+                <p>
+                    {{ $student['name'] ?? '' }}
+                    @if (filled($student['roll'] ?? null))
+                        / Roll No. {{ $student['roll'] }}
+                    @endif
+                    @if (filled($student['batch'] ?? null))
+                        / Batch {{ $student['batch'] }}
+                    @endif
+                </p>
+            @endforeach
         </div>
-        <div>
-            <p class="tu-label">SUBMITTED TO:</p>
-            @if ($report->submitted_to)
-                <p><strong>{{ $report->submitted_to }}</strong></p>
+    @endif
+
+    @if (filled($report->tu_department) || filled($report->tu_campus_address) || filled($report->submitted_to))
+        <p class="tu-block-label">Submitted to:</p>
+        <div class="tu-submitted-to">
+            @if (filled($report->tu_department))
+                <p>{{ $report->tu_department }}</p>
             @endif
-            @if ($report->tu_submitted_to_position)
-                <p><strong>{{ $report->tu_submitted_to_position }}</strong></p>
+            @if (filled($report->tu_campus_address))
+                <p>{{ $report->tu_campus_address }}</p>
             @endif
+            <p>Tribhuvan University</p>
         </div>
-    </div>
+    @endif
+
+    @if ($report->submission_date)
+        <p class="tu-date">{{ $report->submission_date->format('F, Y') }}</p>
+    @endif
 </main>

@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Report;
+use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Validate;
 use Livewire\Component;
@@ -12,6 +13,21 @@ new class extends Component
     public string $cover_format = 'london_met';
 
     public string $tu_college_name = '';
+
+    public string $tu_institute = '';
+
+    public string $tu_department = '';
+
+    public string $tu_campus_address = '';
+
+    public string $tu_report_type = 'Project Work Report';
+
+    public string $tu_supervisor_name = '';
+
+    public string $tu_degree = '';
+
+    /** @var list<array{name: string, roll: string, batch: string}> */
+    public array $tu_students = [];
 
     public string $tu_roll_number = '';
 
@@ -59,7 +75,7 @@ new class extends Component
     #[Validate('nullable|string|max:255')]
     public string $submitted_to = '';
 
-    public function mount(?Report $report = null): void
+    public function mount(?Report $report = null)
     {
         if ($report && $report->exists) {
             $this->authorize('update', $report);
@@ -67,6 +83,13 @@ new class extends Component
             $this->report = $report;
             $this->cover_format = $report->cover_format ?: 'london_met';
             $this->tu_college_name = (string) $report->tu_college_name;
+            $this->tu_institute = (string) $report->tu_institute;
+            $this->tu_department = (string) $report->tu_department;
+            $this->tu_campus_address = (string) $report->tu_campus_address;
+            $this->tu_report_type = (string) ($report->tu_report_type ?: 'Project Work Report');
+            $this->tu_supervisor_name = (string) $report->tu_supervisor_name;
+            $this->tu_degree = (string) $report->tu_degree;
+            $this->tu_students = is_array($report->tu_students) ? $report->tu_students : [];
             $this->tu_roll_number = (string) $report->tu_roll_number;
             $this->tu_submitted_to_position = (string) $report->tu_submitted_to_position;
             $this->module_code = (string) $report->module_code;
@@ -83,9 +106,20 @@ new class extends Component
             $this->assignment_due_date = $report->assignment_due_date?->format('Y-m-d') ?? '';
             $this->submission_date = $report->submission_date?->format('Y-m-d') ?? '';
             $this->submitted_to = (string) $report->submitted_to;
-        } else {
-            $this->authorize('create', Report::class);
+        } elseif (Auth::user()->hasReachedReportLimit()) {
+            return $this->redirectToReportLimitNotice();
         }
+    }
+
+    /**
+     * Send the student back to the dashboard with a friendly explanation
+     * instead of a raw 403 when they have no free report slots left.
+     */
+    protected function redirectToReportLimitNotice()
+    {
+        session()->flash('report-limit', 'You already have '.Auth::user()->reports()->count().' of '.User::MAX_REPORTS.' reports. Adding more students to a group project is fine and never counts against this — but to start a brand-new report, delete one of your existing reports first.');
+
+        return $this->redirectRoute('reports.index', navigate: true);
     }
 
     /**
@@ -98,6 +132,16 @@ new class extends Component
         return [
             'cover_format' => 'required|in:london_met,tu',
             'tu_college_name' => 'nullable|string|max:255',
+            'tu_institute' => 'nullable|string|max:255',
+            'tu_department' => 'nullable|string|max:255',
+            'tu_campus_address' => 'nullable|string|max:255',
+            'tu_report_type' => 'nullable|string|max:80',
+            'tu_supervisor_name' => 'nullable|string|max:255',
+            'tu_degree' => 'nullable|string|max:255',
+            'tu_students' => 'nullable|array',
+            'tu_students.*.name' => 'nullable|string|max:255',
+            'tu_students.*.roll' => 'nullable|string|max:50',
+            'tu_students.*.batch' => 'nullable|string|max:50',
             'tu_roll_number' => 'nullable|string|max:50',
             'tu_submitted_to_position' => 'nullable|string|max:255',
             'module_code' => 'nullable|string|max:50',
@@ -160,10 +204,21 @@ new class extends Component
         return $data;
     }
 
+    public function addTuStudent(): void
+    {
+        $this->tu_students[] = ['name' => '', 'roll' => '', 'batch' => ''];
+    }
+
+    public function removeTuStudent(int $index): void
+    {
+        unset($this->tu_students[$index]);
+        $this->tu_students = array_values($this->tu_students);
+    }
+
     public function save()
     {
-        if ($this->report === null) {
-            $this->authorize('create', Report::class);
+        if ($this->report === null && Auth::user()->hasReachedReportLimit()) {
+            return $this->redirectToReportLimitNotice();
         }
 
         $data = $this->normalizeDates($this->validate($this->coverRules()));
@@ -182,8 +237,8 @@ new class extends Component
      */
     public function saveDraft()
     {
-        if ($this->report === null) {
-            $this->authorize('create', Report::class);
+        if ($this->report === null && Auth::user()->hasReachedReportLimit()) {
+            return $this->redirectToReportLimitNotice();
         }
 
         $data = $this->normalizeDates($this->validate($this->draftRules()));
@@ -279,56 +334,125 @@ new class extends Component
 
             @if ($cover_format === 'tu')
             <section>
-                <h2 class="text-base font-semibold text-gray-900">College</h2>
+                <h2 class="text-base font-semibold text-gray-900">Institute &amp; campus</h2>
 
-                <div class="mt-4">
-                    <label for="tu_college_name" class="block text-sm font-medium text-gray-700">College name <span class="text-red-500">*</span></label>
-                    <textarea id="tu_college_name" wire:model="tu_college_name" rows="2" placeholder="e.g. Institute of Engineering&#10;Pulchowk Campus" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
-                    <p class="mt-1 text-xs text-gray-500">Appears under "Tribhuvan University" on the cover. Use a new line for the campus.</p>
-                    @error('tu_college_name') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                <div class="mt-4 grid grid-cols-1 gap-4">
+                    <div>
+                        <label for="tu_institute" class="block text-sm font-medium text-gray-700">Institute</label>
+                        <input type="text" id="tu_institute" wire:model="tu_institute" placeholder="e.g. Institute of Science and Technology" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <p class="mt-1 text-xs text-gray-500">Examples: Institute of Engineering, Institute of Science and Technology, Institute of Medicine.</p>
+                        @error('tu_institute') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                    </div>
+
+                    <div>
+                        <label for="tu_college_name" class="block text-sm font-medium text-gray-700">Campus name <span class="text-red-500">*</span></label>
+                        <input type="text" id="tu_college_name" wire:model="tu_college_name" placeholder="e.g. Amrit Campus" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        @error('tu_college_name') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                    </div>
+
+                    <div>
+                        <label for="tu_department" class="block text-sm font-medium text-gray-700">Department</label>
+                        <input type="text" id="tu_department" wire:model="tu_department" placeholder="e.g. Department of Computer Science &amp; Information Technology" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        @error('tu_department') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                    </div>
+
+                    <div>
+                        <label for="tu_campus_address" class="block text-sm font-medium text-gray-700">Campus address</label>
+                        <input type="text" id="tu_campus_address" wire:model="tu_campus_address" placeholder="e.g. Thamel, Kathmandu" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        @error('tu_campus_address') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                    </div>
                 </div>
             </section>
 
             <section>
-                <h2 class="text-base font-semibold text-gray-900">Submitted by</h2>
+                <h2 class="text-base font-semibold text-gray-900">Report &amp; degree</h2>
 
                 <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                        <label for="tu_report_type" class="block text-sm font-medium text-gray-700">Report type</label>
+                        <input type="text" id="tu_report_type" wire:model="tu_report_type" placeholder="e.g. Project Work Report" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        @error('tu_report_type') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                    </div>
+
+                    <div>
+                        <label for="tu_supervisor_name" class="block text-sm font-medium text-gray-700">Supervisor name</label>
+                        <input type="text" id="tu_supervisor_name" wire:model="tu_supervisor_name" placeholder="e.g. Mr. Akkal Bahadur Bist" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        @error('tu_supervisor_name') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                    </div>
+
                     <div class="sm:col-span-2">
-                        <label for="tu_student_name" class="block text-sm font-medium text-gray-700">Name <span class="text-red-500">*</span></label>
-                        <input type="text" id="tu_student_name" wire:model="student_name" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                        @error('student_name') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                        <label for="tu_degree" class="block text-sm font-medium text-gray-700">Degree (long form)</label>
+                        <input type="text" id="tu_degree" wire:model="tu_degree" placeholder="e.g. Bachelor of Science in Computer Science and Information Technology (B.Sc. CSIT)" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <p class="mt-1 text-xs text-gray-500">Goes into "In partial fulfillment of the requirements for the …".</p>
+                        @error('tu_degree') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <div class="flex items-end justify-between">
+                    <h2 class="text-base font-semibold text-gray-900">Submitted by</h2>
+                    <button type="button" wire:click="addTuStudent" class="text-xs font-semibold text-indigo-600 hover:text-indigo-500">+ Add another student</button>
+                </div>
+
+                <p class="mt-1 text-xs text-gray-500">Use this for group projects. The first student is also used as the main student name on the report.</p>
+
+                <div class="mt-4">
+                    <label for="tu_semester" class="block text-sm font-medium text-gray-700">Semester</label>
+                    <input type="text" id="tu_semester" wire:model="semester" placeholder="e.g. VII Semester" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <p class="mt-1 text-xs text-gray-500">Optional. Shown after the roll number on the declaration page (e.g. &ldquo;VII Semester&rdquo;).</p>
+                    @error('semester') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                </div>
+
+                @if ($tu_students === [])
+                    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div class="sm:col-span-2">
+                            <label for="tu_student_name" class="block text-sm font-medium text-gray-700">Name <span class="text-red-500">*</span></label>
+                            <input type="text" id="tu_student_name" wire:model="student_name" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            @error('student_name') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                        </div>
+
+                        <div>
+                            <label for="tu_roll_number" class="block text-sm font-medium text-gray-700">Roll number <span class="text-red-500">*</span></label>
+                            <input type="text" id="tu_roll_number" wire:model="tu_roll_number" placeholder="e.g. 700076" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            @error('tu_roll_number') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                        </div>
+
+                        <div>
+                            <label for="tu_submission_date" class="block text-sm font-medium text-gray-700">Date</label>
+                            <input type="date" id="tu_submission_date" wire:model="submission_date" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            @error('submission_date') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                        </div>
+                    </div>
+                @else
+                    <div class="mt-4 space-y-4">
+                        @foreach ($tu_students as $index => $student)
+                            <div wire:key="tu-student-{{ $index }}" class="grid grid-cols-1 gap-3 rounded-md ring-1 ring-gray-200 p-3 sm:grid-cols-12">
+                                <div class="sm:col-span-5">
+                                    <label class="block text-xs font-medium text-gray-700">Name</label>
+                                    <input type="text" wire:model="tu_students.{{ $index }}.name" class="mt-1 block w-full rounded-md px-2 py-1.5 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                </div>
+                                <div class="sm:col-span-3">
+                                    <label class="block text-xs font-medium text-gray-700">Roll No.</label>
+                                    <input type="text" wire:model="tu_students.{{ $index }}.roll" placeholder="700076" class="mt-1 block w-full rounded-md px-2 py-1.5 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                </div>
+                                <div class="sm:col-span-3">
+                                    <label class="block text-xs font-medium text-gray-700">Batch</label>
+                                    <input type="text" wire:model="tu_students.{{ $index }}.batch" placeholder="2079" class="mt-1 block w-full rounded-md px-2 py-1.5 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                </div>
+                                <div class="sm:col-span-1 flex items-end">
+                                    <button type="button" wire:click="removeTuStudent({{ $index }})" class="rounded-md px-2 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50" title="Remove">&times;</button>
+                                </div>
+                            </div>
+                        @endforeach
                     </div>
 
-                    <div>
-                        <label for="tu_roll_number" class="block text-sm font-medium text-gray-700">Roll number <span class="text-red-500">*</span></label>
-                        <input type="text" id="tu_roll_number" wire:model="tu_roll_number" placeholder="e.g. 073/MSREE/519" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                        @error('tu_roll_number') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
-                    </div>
-
-                    <div>
-                        <label for="tu_submission_date" class="block text-sm font-medium text-gray-700">Date</label>
+                    <div class="mt-3">
+                        <label for="tu_submission_date" class="block text-sm font-medium text-gray-700">Submission date</label>
                         <input type="date" id="tu_submission_date" wire:model="submission_date" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
                         @error('submission_date') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
                     </div>
-                </div>
-            </section>
-
-            <section>
-                <h2 class="text-base font-semibold text-gray-900">Submitted to</h2>
-
-                <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div>
-                        <label for="tu_submitted_to" class="block text-sm font-medium text-gray-700">Name</label>
-                        <input type="text" id="tu_submitted_to" wire:model="submitted_to" placeholder="e.g. Prof. Dr. Amrit Man Nakarmi" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                        @error('submitted_to') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
-                    </div>
-
-                    <div>
-                        <label for="tu_submitted_to_position" class="block text-sm font-medium text-gray-700">Position</label>
-                        <input type="text" id="tu_submitted_to_position" wire:model="tu_submitted_to_position" placeholder="e.g. Department of Mechanical Engineering" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                        @error('tu_submitted_to_position') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
-                    </div>
-                </div>
+                @endif
             </section>
             @endif
 

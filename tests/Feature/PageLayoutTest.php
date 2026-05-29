@@ -75,6 +75,55 @@ it('renders the configured margins into the report output', function () {
         ->assertSee('1.50in');
 });
 
+it('defaults Heading 1 to centered, not capitalized', function () {
+    $report = makeReportForLayout();
+
+    expect($report->headingAlign())->toBe('center')
+        ->and($report->heading_uppercase)->toBeFalse();
+});
+
+it('persists the Heading 1 alignment and capitalize options', function () {
+    $report = makeReportForLayout();
+
+    $this->post(route('reports.cover.settings', $report), [
+        'heading_align' => 'left',
+        'heading_uppercase' => '1',
+    ])->assertRedirect();
+
+    $fresh = $report->fresh();
+
+    expect($fresh->headingAlign())->toBe('left')
+        ->and($fresh->heading_uppercase)->toBeTrue();
+});
+
+it('treats an unchecked capitalize box as off', function () {
+    $report = makeReportForLayout(['heading_uppercase' => true]);
+
+    // The checkbox is omitted from the request when unticked.
+    $this->post(route('reports.cover.settings', $report), [
+        'heading_align' => 'center',
+    ])->assertRedirect();
+
+    expect($report->fresh()->heading_uppercase)->toBeFalse();
+});
+
+it('renders the chosen heading alignment and capitalize into the output', function () {
+    $report = makeReportForLayout(['heading_align' => 'left', 'heading_uppercase' => true]);
+
+    $this->get(route('reports.output', $report))
+        ->assertOk()
+        ->assertSee('text-align: left')
+        ->assertSee('text-transform: uppercase');
+});
+
+it('rejects an invalid heading alignment', function () {
+    $report = makeReportForLayout();
+
+    $this->post(route('reports.cover.settings', $report), [
+        'heading_align' => 'sideways',
+    ])->assertSessionHasErrors('heading_align');
+});
+
 it('rejects out-of-range margins', function () {
     $report = makeReportForLayout();
 

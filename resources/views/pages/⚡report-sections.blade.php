@@ -238,12 +238,12 @@ new class extends Component
 
 <div class="min-h-screen bg-gray-100">
     <header class="border-b border-gray-200 bg-white">
-        <div class="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
+        <div class="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
             <div class="min-w-0">
                 <a href="{{ route('reports.cover', ['report' => $report]) }}" class="text-xs font-medium text-indigo-600 hover:text-indigo-500">&larr; Back to cover</a>
                 <h1 class="truncate text-sm font-semibold text-gray-900">{{ $report->module_code }} &middot; {{ $report->module_title }}</h1>
             </div>
-            <div class="flex shrink-0 items-center gap-2">
+            <div class="flex shrink-0 flex-wrap items-center gap-2">
                 <livewire:manage-references :report="$report" />
                 <a href="{{ route('reports.output', ['report' => $report]) }}" class="rounded-md bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-700">
                     View full report
@@ -252,8 +252,8 @@ new class extends Component
         </div>
     </header>
 
-    <div class="mx-auto flex max-w-7xl gap-6 px-4 py-6 sm:px-6">
-        <aside class="w-64 shrink-0 space-y-4">
+    <div class="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:flex-row">
+        <aside class="w-full space-y-4 lg:w-64 lg:shrink-0">
             {{-- Front-matter pages — shown after the cover, before the contents --}}
             <div class="rounded-lg bg-white p-4 shadow-sm ring-1 ring-gray-200">
                 <h2 class="text-xs font-semibold uppercase tracking-wide text-gray-500">Front pages</h2>
@@ -270,7 +270,7 @@ new class extends Component
                             <button type="button" wire:click="selectSection({{ $section->id }})" class="flex-1 truncate text-left">
                                 {{ $section->title }}
                             </button>
-                            <button type="button" wire:click="deleteSection({{ $section->id }})" wire:confirm="Delete this page?" class="opacity-0 group-hover:opacity-100 text-xs text-red-600 hover:text-red-800">
+                            <button type="button" wire:click="deleteSection({{ $section->id }})" wire:confirm="Delete this page?" class="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 text-xs text-red-600 hover:text-red-800">
                                 &times;
                             </button>
                         </li>
@@ -304,7 +304,7 @@ new class extends Component
                             <button type="button" wire:click="selectSection({{ $section->id }})" class="flex-1 truncate text-left">
                                 {{ $section->title }}
                             </button>
-                            <button type="button" wire:click="deleteSection({{ $section->id }})" wire:confirm="Delete this section?" class="opacity-0 group-hover:opacity-100 text-xs text-red-600 hover:text-red-800">
+                            <button type="button" wire:click="deleteSection({{ $section->id }})" wire:confirm="Delete this section?" class="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 text-xs text-red-600 hover:text-red-800">
                                 &times;
                             </button>
                         </li>

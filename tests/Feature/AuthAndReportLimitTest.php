@@ -42,15 +42,17 @@ it('forbids viewing another user\'s report', function () {
     $this->get(route('reports.output', $report))->assertForbidden();
 });
 
-it('blocks opening the create page when the user already has two reports', function () {
+it('redirects to the dashboard with a friendly notice when the user already has two reports', function () {
     $user = loginAsTestUser();
     Report::factory()->for($user)->count(User::MAX_REPORTS)->create();
 
     expect($user->fresh()->hasReachedReportLimit())->toBeTrue();
 
-    $this->get(route('reports.create'))->assertForbidden();
+    Livewire::test('pages::report-form')
+        ->assertRedirect(route('reports.index'));
 
-    expect($user->reports()->count())->toBe(User::MAX_REPORTS);
+    expect(session('report-limit'))->toContain('delete one of your existing reports')
+        ->and($user->reports()->count())->toBe(User::MAX_REPORTS);
 });
 
 it('allows creating a report when under the limit', function () {
@@ -68,6 +70,24 @@ it('allows creating a report when under the limit', function () {
 
     expect($user->reports()->count())->toBe(1)
         ->and($user->reports()->first()->title)->toBe('First Report');
+});
+
+it('treats a group project with many students as a single report', function () {
+    $user = loginAsTestUser();
+
+    Livewire::test('pages::report-form')
+        ->set('cover_format', 'tu')
+        ->set('tu_college_name', 'Islington College')
+        ->set('title', 'Group Project')
+        ->set('student_name', 'Lead Student')
+        ->set('tu_roll_number', '700076')
+        ->call('addTuStudent')
+        ->call('addTuStudent')
+        ->call('addTuStudent')
+        ->call('save');
+
+    expect($user->reports()->count())->toBe(1)
+        ->and($user->fresh()->hasReachedReportLimit())->toBeFalse();
 });
 
 it('deleting a report frees a slot to create another', function () {
