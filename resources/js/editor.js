@@ -32,6 +32,21 @@ export function registerEditorComponent(Alpine) {
         citationFormat: config.citationFormat || 'london_met',
         citePickerOpen: false,
 
+        // Image caption modal (replaces window.prompt).
+        imageModalOpen: false,
+        imageCaption: '',
+        pendingImageSrc: null,
+
+        // Transient toolbar notice (replaces window.alert).
+        notice: '',
+
+        /** Show a brief, non-blocking message in the toolbar. */
+        flash(message) {
+            this.notice = message
+            clearTimeout(this._noticeTimer)
+            this._noticeTimer = setTimeout(() => { this.notice = '' }, 3000)
+        },
+
         // Called once from the blade via x-init.
         mountEditor() {
             const el = this.$refs.content
@@ -121,7 +136,7 @@ export function registerEditorComponent(Alpine) {
             const img = this.selectedImage
 
             if (!img) {
-                window.alert('Click an image first, then use the resize buttons.')
+                this.flash('Click an image first, then use the resize buttons.')
 
                 return
             }
@@ -171,7 +186,7 @@ export function registerEditorComponent(Alpine) {
             this.dirty = true
         },
 
-        /** Read the chosen image file and insert it as a captioned figure. */
+        /** Read the chosen image file, then ask for a caption via the modal. */
         insertImage(event) {
             const file = event.target.files && event.target.files[0]
             event.target.value = ''
@@ -180,20 +195,48 @@ export function registerEditorComponent(Alpine) {
                 return
             }
 
+            this.saveSelection()
+
             const reader = new FileReader()
-
             reader.onload = () => {
-                const caption = (window.prompt('Figure caption (shown in the Table of Figures):', '') || '').trim()
-                const safe = escapeHtml(caption || 'Figure')
+                this.pendingImageSrc = reader.result
+                this.imageCaption = ''
+                this.imageModalOpen = true
+                this.$nextTick(() => this.$refs.imageCaptionInput && this.$refs.imageCaptionInput.focus())
+            }
+            reader.readAsDataURL(file)
+        },
 
-                this.insertAtCursor(
-                    `<figure class="image" style="text-align:center">`
-                    + `<img src="${reader.result}" alt="${safe}" style="display:block;margin:0 auto;max-width:100%;height:auto">`
-                    + `<figcaption>${safe}</figcaption></figure><p><br></p>`,
-                )
+        /** Insert the pending image as a captioned figure. The "Figure N"
+         *  number is added automatically by the report, so only the caption
+         *  text is stored here. */
+        confirmImage() {
+            if (!this.pendingImageSrc) {
+                this.imageModalOpen = false
+
+                return
             }
 
-            reader.readAsDataURL(file)
+            const caption = this.imageCaption.trim()
+            const safeAlt = escapeHtml(caption || 'Figure')
+            const figcaption = caption === '' ? '' : `<figcaption>${escapeHtml(caption)}</figcaption>`
+
+            this.insertAtCursor(
+                `<figure class="image" style="text-align:center">`
+                + `<img src="${this.pendingImageSrc}" alt="${safeAlt}" style="display:block;margin:0 auto;max-width:100%;height:auto">`
+                + `${figcaption}</figure><p><br></p>`,
+            )
+
+            this.pendingImageSrc = null
+            this.imageCaption = ''
+            this.imageModalOpen = false
+        },
+
+        /** Close the caption modal without inserting. */
+        cancelImage() {
+            this.pendingImageSrc = null
+            this.imageCaption = ''
+            this.imageModalOpen = false
         },
 
         /** Insert an editable table with a name that feeds the Table of Tables. */

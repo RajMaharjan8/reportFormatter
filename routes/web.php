@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Auth\GoogleAuthController;
+use App\Models\CoverTemplate;
 use App\Models\Report;
 use App\Support\ReportCompiler;
 use App\Support\ReportWord;
@@ -23,6 +24,8 @@ Route::middleware('auth')->group(function () {
 
     Route::livewire('/reports/create', 'pages::report-form')->name('reports.create');
 
+    Route::livewire('/cover-templates', 'pages::cover-templates')->name('cover.templates');
+
     Route::livewire('/reports/{report}/edit', 'pages::report-form')
         ->name('reports.edit')
         ->can('update', 'report');
@@ -31,8 +34,11 @@ Route::middleware('auth')->group(function () {
         ->name('reports.sections')
         ->can('update', 'report');
 
-    Route::get('/reports/{report}/cover', function (Report $report) {
-        return view('reports.cover', ['report' => $report]);
+    Route::get('/reports/{report}/cover', function (Report $report, Request $request) {
+        return view('reports.cover', [
+            'report' => $report,
+            'coverTemplates' => CoverTemplate::where('user_id', $request->user()->id)->latest()->get(),
+        ]);
     })->name('reports.cover')->can('update', 'report');
 
     Route::get('/reports/{report}/output', function (Report $report) {
@@ -97,9 +103,13 @@ Route::middleware('auth')->group(function () {
     // Persist hand-edited front pages (cover, declaration, recommendation,
     // certificate) from the preview's "Edit pages" mode.
     Route::post('/reports/{report}/front-overrides', function (Report $report, Request $request) {
+        // No length cap: section/cover HTML can embed large base64 images, and
+        // a tight limit silently rejected saves (the edit appeared to revert).
         $validated = $request->validate([
             'blocks' => 'required|array',
-            'blocks.*' => 'nullable|string|max:50000',
+            'blocks.*' => 'nullable|string',
+            'sections' => 'nullable|array',
+            'sections.*' => 'nullable|string',
         ]);
 
         $allowed = $report->editableFrontBlocks();
@@ -121,6 +131,12 @@ Route::middleware('auth')->group(function () {
 
         $report->update(['front_overrides' => $overrides === [] ? null : $overrides]);
 
+        // Inline body / front-page edits save straight to the section source so
+        // the compiler can re-apply heading numbers and citations on render.
+        foreach ($validated['sections'] ?? [] as $id => $html) {
+            $report->sections()->whereKey((int) $id)->first()?->update(['content' => (string) $html]);
+        }
+
         return redirect()
             ->route('reports.output', ['report' => $report])
             ->with('cover-saved', 'Your edits were saved.');
@@ -134,4 +150,22 @@ Route::middleware('auth')->group(function () {
             ->route('reports.output', ['report' => $report])
             ->with('cover-saved', 'Pages reset to the generated template.');
     })->name('reports.front-overrides.reset')->can('update', 'report');
+
+    // Apply one of the user's saved custom covers to this report.
+    Route::post('/reports/{report}/cover/use-template', function (Report $report, Request $request) {
+        $validated = $request->validate(['template_id' => 'required|integer']);
+
+        $template = CoverTemplate::where('user_id', $request->user()->id)
+            ->findOrFail($validated['template_id']);
+
+        // Wrap the designer's content in a self-contained A4 sheet so it
+        // renders the same everywhere the cover override is shown.
+        $overrides = $report->front_overrides ?? [];
+        $overrides['cover'] = '<div class="cover-sheet-custom cover-custom">'.$template->html.'</div>';
+        $report->update(['front_overrides' => $overrides]);
+
+        return redirect()
+            ->route('reports.cover', ['report' => $report])
+            ->with('cover-saved', 'Applied your custom cover “'.$template->name.'”.');
+    })->name('reports.cover.use-template')->can('update', 'report');
 });

@@ -108,6 +108,49 @@
                         </div>
                     </details>
 
+                    {{-- Custom cover designs --}}
+                    <details class="relative">
+                        <summary class="{{ $btnSecondary }} cursor-pointer">
+                            Cover design
+                            <svg class="ml-1 h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.17l3.71-3.94a.75.75 0 1 1 1.08 1.04l-4.25 4.5a.75.75 0 0 1-1.08 0l-4.25-4.5a.75.75 0 0 1 .02-1.06Z" clip-rule="evenodd" /></svg>
+                        </summary>
+
+                        <div class="absolute right-0 z-30 mt-2 w-[calc(100vw-2rem)] max-w-80 rounded-lg bg-white p-4 text-left shadow-xl ring-1 ring-gray-200">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Use a saved cover</p>
+
+                            @if (filled($report->frontOverride('cover')))
+                                <div class="mt-2 flex items-center justify-between rounded-md bg-indigo-50 px-2 py-1.5 text-xs text-indigo-700">
+                                    <span>A custom cover is in use.</span>
+                                    <form method="POST" action="{{ route('reports.front-overrides.reset', ['report' => $report]) }}" onsubmit="return confirm('Remove the custom cover and any page edits?');">
+                                        @csrf
+                                        <button type="submit" class="font-semibold underline">Remove</button>
+                                    </form>
+                                </div>
+                            @endif
+
+                            <ul class="mt-2 space-y-1">
+                                @forelse ($coverTemplates as $template)
+                                    <li>
+                                        <form method="POST" action="{{ route('reports.cover.use-template', ['report' => $report]) }}">
+                                            @csrf
+                                            <input type="hidden" name="template_id" value="{{ $template->id }}">
+                                            <button type="submit" class="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50">
+                                                <span class="truncate">{{ $template->name }}</span>
+                                                <span class="text-xs font-semibold text-indigo-600">Use</span>
+                                            </button>
+                                        </form>
+                                    </li>
+                                @empty
+                                    <li class="px-2 py-1.5 text-xs text-gray-500">No saved covers yet.</li>
+                                @endforelse
+                            </ul>
+
+                            <a href="{{ route('cover.templates') }}" class="mt-3 block rounded-md bg-indigo-600 px-3 py-1.5 text-center text-sm font-semibold text-white hover:bg-indigo-500">
+                                Open Cover Designer
+                            </a>
+                        </div>
+                    </details>
+
                     <a href="{{ route('reports.sections', ['report' => $report]) }}" class="{{ $btnSecondary }}">Write content</a>
                     <a href="{{ route('reports.output', ['report' => $report]) }}" class="{{ $btnPrimary }}">View report</a>
                 </div>
@@ -115,6 +158,10 @@
         </div>
     </div>
 
-    @include($report->cover_format === 'tu' ? 'reports.partials.tu-cover-sheet' : 'reports.partials.cover-sheet')
+    @if (filled($report->frontOverride('cover')))
+        <div class="cover-sheet mx-auto my-6 w-fit shadow-md ring-1 ring-gray-200">{!! $report->frontOverride('cover') !!}</div>
+    @else
+        @include($report->cover_format === 'tu' ? 'reports.partials.tu-cover-sheet' : 'reports.partials.cover-sheet')
+    @endif
 </body>
 </html>

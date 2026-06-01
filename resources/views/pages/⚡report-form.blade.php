@@ -12,6 +12,9 @@ new class extends Component
 
     public string $cover_format = 'london_met';
 
+    /** The saved cover the user picked when cover_format is "custom". */
+    public ?int $custom_cover_id = null;
+
     public string $tu_college_name = '';
 
     public string $tu_institute = '';
@@ -75,6 +78,12 @@ new class extends Component
     #[Validate('nullable|string|max:255')]
     public string $submitted_to = '';
 
+    /** @return \Illuminate\Support\Collection<int, \App\Models\CoverTemplate> */
+    public function getCoverTemplatesProperty()
+    {
+        return \App\Models\CoverTemplate::where('user_id', Auth::id())->latest()->get();
+    }
+
     public function mount(?Report $report = null)
     {
         if ($report && $report->exists) {
@@ -130,7 +139,8 @@ new class extends Component
     protected function draftRules(): array
     {
         return [
-            'cover_format' => 'required|in:london_met,tu',
+            'cover_format' => 'required|in:london_met,tu,custom',
+            'custom_cover_id' => 'nullable|integer',
             'tu_college_name' => 'nullable|string|max:255',
             'tu_institute' => 'nullable|string|max:255',
             'tu_department' => 'nullable|string|max:255',
@@ -168,6 +178,17 @@ new class extends Component
      */
     protected function coverRules(): array
     {
+        if ($this->cover_format === 'custom') {
+            $required = ['title' => 'required|string|max:255'];
+
+            // Must pick a saved cover when creating, or if none is applied yet.
+            if (! $this->report || blank($this->report->frontOverride('cover'))) {
+                $required['custom_cover_id'] = 'required|integer';
+            }
+
+            return array_merge($this->draftRules(), $required);
+        }
+
         $required = $this->cover_format === 'tu'
             ? [
                 'tu_college_name' => 'required|string|max:255',
@@ -215,19 +236,43 @@ new class extends Component
         $this->tu_students = array_values($this->tu_students);
     }
 
-    public function save()
+    /**
+     * Create or update the report, then apply the chosen saved cover when the
+     * format is "custom". Strips the non-column custom_cover_id first.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    protected function persist(array $data): Report
     {
-        if ($this->report === null && Auth::user()->hasReachedReportLimit()) {
-            return $this->redirectToReportLimitNotice();
-        }
-
-        $data = $this->normalizeDates($this->validate($this->coverRules()));
+        $coverId = $data['custom_cover_id'] ?? null;
+        unset($data['custom_cover_id']);
 
         $report = $this->report
             ? tap($this->report)->update($data)
             : Auth::user()->reports()->create($data);
 
         $saved = $this->report ?? $report;
+
+        if ($this->cover_format === 'custom' && $coverId) {
+            $template = \App\Models\CoverTemplate::where('user_id', Auth::id())->find($coverId);
+
+            if ($template) {
+                $overrides = $saved->front_overrides ?? [];
+                $overrides['cover'] = '<div class="cover-sheet-custom cover-custom">'.$template->html.'</div>';
+                $saved->update(['front_overrides' => $overrides]);
+            }
+        }
+
+        return $saved;
+    }
+
+    public function save()
+    {
+        if ($this->report === null && Auth::user()->hasReachedReportLimit()) {
+            return $this->redirectToReportLimitNotice();
+        }
+
+        $saved = $this->persist($this->normalizeDates($this->validate($this->coverRules())));
 
         return $this->redirectRoute('reports.cover', ['report' => $saved], navigate: true);
     }
@@ -241,13 +286,7 @@ new class extends Component
             return $this->redirectToReportLimitNotice();
         }
 
-        $data = $this->normalizeDates($this->validate($this->draftRules()));
-
-        $report = $this->report
-            ? tap($this->report)->update($data)
-            : Auth::user()->reports()->create($data);
-
-        $saved = $this->report ?? $report;
+        $saved = $this->persist($this->normalizeDates($this->validate($this->draftRules())));
 
         session()->flash('draft-saved', 'Draft saved — you can safely close this page and finish later.');
 
@@ -273,6 +312,8 @@ new class extends Component
             <p class="mt-2 text-sm text-gray-600">
                 @if ($cover_format === 'tu')
                     Tribhuvan University
+                @elseif ($cover_format === 'custom')
+                    Your custom cover design
                 @else
                     Islington College &middot; London Metropolitan University
                 @endif
@@ -294,9 +335,28 @@ new class extends Component
                     <select id="cover_format" wire:model.live="cover_format" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
                         <option value="london_met">London Metropolitan University</option>
                         <option value="tu">Tribhuvan University (TU)</option>
+                        @if ($this->coverTemplates->isNotEmpty())
+                            <option value="custom">My custom cover</option>
+                        @endif
                     </select>
                     <p class="mt-1 text-xs text-gray-500">This decides which cover layout and fields are used.</p>
                     @error('cover_format') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+
+                    @if ($cover_format === 'custom')
+                        <div class="mt-4">
+                            <label for="custom_cover_id" class="block text-sm font-medium text-gray-700">Choose your saved cover <span class="text-red-500">*</span></label>
+                            <select id="custom_cover_id" wire:model="custom_cover_id" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                <option value="">&mdash; Select a cover &mdash;</option>
+                                @foreach ($this->coverTemplates as $template)
+                                    <option value="{{ $template->id }}">{{ $template->name }}</option>
+                                @endforeach
+                            </select>
+                            <p class="mt-1 text-xs text-gray-500">Your designed cover is used as the cover page. <a href="{{ route('cover.templates') }}" class="font-medium text-indigo-600 hover:text-indigo-500">Design or edit covers &rarr;</a></p>
+                            @error('custom_cover_id') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                        </div>
+                    @else
+                        <p class="mt-2 text-xs text-gray-500">Want your own design? <a href="{{ route('cover.templates') }}" class="font-medium text-indigo-600 hover:text-indigo-500">Open the Cover Designer &rarr;</a></p>
+                    @endif
                 </div>
             </section>
 

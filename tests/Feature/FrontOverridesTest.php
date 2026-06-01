@@ -45,6 +45,23 @@ it('saves a hand-edited front page and renders it in the report', function () {
         ->assertDontSee('I hereby declare that this project work');
 });
 
+it('saves inline body edits straight to the section source', function () {
+    $report = overrideReport();
+    $section = $report->sections()->create([
+        'title' => 'Introduction',
+        'placement' => 'body',
+        'order' => 1,
+        'content' => '<p>old text</p>',
+    ]);
+
+    $this->post(route('reports.front-overrides.save', $report), [
+        'blocks' => ['cover' => ''],
+        'sections' => [$section->id => '<p>brand new intro</p>'],
+    ])->assertRedirect();
+
+    expect($section->fresh()->content)->toBe('<p>brand new intro</p>');
+});
+
 it('ignores blocks that are not editable', function () {
     $report = overrideReport();
 

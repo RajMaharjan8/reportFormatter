@@ -97,3 +97,48 @@ it('numbers tables and figures with anchor ids for the lists', function () {
         'id' => 'fig-1',
     ]);
 });
+
+it('numbers figures and tables sequentially across sections', function () {
+    $report = makeReport();
+
+    $report->sections()->create([
+        'order' => 0,
+        'title' => 'One',
+        'content' => '<figure class="image"><img src="a.png"><figcaption>Alpha</figcaption></figure>'
+            .'<table><caption>First</caption><tbody><tr><td>x</td></tr></tbody></table>',
+    ]);
+    $report->sections()->create([
+        'order' => 1,
+        'title' => 'Two',
+        'content' => '<figure class="image"><img src="b.png"><figcaption>Beta</figcaption></figure>'
+            .'<figure class="image"><img src="c.png"><figcaption>Gamma</figcaption></figure>'
+            .'<table><caption>Second</caption><tbody><tr><td>y</td></tr></tbody></table>',
+    ]);
+
+    $compiler = ReportCompiler::for($report->load('sections'));
+
+    expect(array_column($compiler->figures(), 'label'))->toBe([
+        'Figure 1: Alpha',
+        'Figure 2: Beta',
+        'Figure 3: Gamma',
+    ]);
+    expect(array_column($compiler->tables(), 'label'))->toBe([
+        'Table 1: First',
+        'Table 2: Second',
+    ]);
+});
+
+it('does not double a label already baked into the caption', function () {
+    $report = makeReport();
+
+    $report->sections()->create([
+        'order' => 0,
+        'title' => 'One',
+        'content' => '<figure class="image"><img src="a.png"><figcaption>Figure 1: Alpha</figcaption></figure>'
+            .'<figure class="image"><img src="b.png"><figcaption>Beta</figcaption></figure>',
+    ]);
+
+    $labels = array_column(ReportCompiler::for($report->load('sections'))->figures(), 'label');
+
+    expect($labels)->toBe(['Figure 1: Alpha', 'Figure 2: Beta']);
+});

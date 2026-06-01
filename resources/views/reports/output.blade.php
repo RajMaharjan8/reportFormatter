@@ -56,6 +56,7 @@
             .report-doc { line-height: {{ number_format($lineSpacing, 2) }}; }
             .report-content p { line-height: {{ number_format($lineSpacing, 2) }}; }
             .section-title { text-align: {{ $headingAlign }}; text-transform: {{ $headingTransform }}; }
+            .frontmatter-heading { text-align: {{ $headingAlign }}; text-transform: {{ $headingTransform }}; }
             .toc-level-1 .toc-label { text-transform: {{ $headingTransform }}; }
         `;
     </script>
@@ -139,6 +140,22 @@
         .edit-doc .report-cover { height: auto; overflow: visible; }
         .edit-doc [contenteditable]:focus { outline: 2px solid #6366f1; outline-offset: 2px; }
         .edit-doc [contenteditable] { cursor: text; }
+
+        .edit-sections { max-width: 210mm; margin: 8px auto 64px; }
+        .edit-sections-intro { padding: 4px 4px 12px; }
+        .edit-sections-intro h2 { margin: 0 0 4px; font-size: 15px; font-weight: 700; color: #111827; }
+        .edit-sections-intro p { margin: 0; font-size: 13px; color: #6b7280; }
+        .edit-section-card { margin-bottom: 16px; background: #fff; border-radius: 10px; box-shadow: 0 0 0 1px #e5e7eb; overflow: hidden; }
+        .edit-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-bottom: 1px solid #f3f4f6; background: #fafafa; }
+        .edit-section-head .ec-label { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 14px; font-weight: 600; color: #111827; }
+        .ec-tag { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 6px; font-size: 12px; font-weight: 700; }
+        .ec-body { background: #eef2ff; color: #4338ca; }
+        .ec-front { background: #fef3c7; color: #92400e; }
+        .ec-edit { flex: none; color: #4f46e5; text-decoration: none; font-size: 13px; font-weight: 600; white-space: nowrap; }
+        .ec-edit:hover { text-decoration: underline; }
+        .edit-section-body { padding: 16px 20px; min-height: 80px; font-family: "Times New Roman", Times, serif; color: #111; }
+        .edit-section-body:focus { outline: 2px solid #6366f1; outline-offset: -2px; }
+        .edit-sections-empty { padding: 14px; font-size: 14px; color: #6b7280; }
     </style>
 </head>
 <body>
@@ -169,19 +186,71 @@
         @endif
     </div>
 
+    {{-- Body & custom pages: edit the text inline here, or open a section in
+         the full editor for headings, citations, images and tables. --}}
+    @php($bodyNo = 0)
+    <div class="edit-sections">
+        <div class="edit-sections-intro">
+            <h2>Written content</h2>
+            <p>Edit your text directly below, then <strong>Save changes</strong>. For headings, citations, images or tables, use <strong>Open in editor</strong>. Numbering and citations are applied automatically in the final report.</p>
+        </div>
+
+        @forelse ($report->sections as $section)
+            <div class="edit-section-card">
+                <div class="edit-section-head">
+                    <span class="ec-label">
+                        @if ($section->placement === 'front')
+                            <span class="ec-tag ec-front">Front page</span>
+                        @else
+                            @php($bodyNo++)
+                            <span class="ec-tag ec-body">{{ $bodyNo }}</span>
+                        @endif
+                        {{ $section->title }}
+                    </span>
+                    <a href="{{ route('reports.sections', ['report' => $report, 'section' => $section->id]) }}" class="ec-edit">Open in editor&nbsp;&#9998;</a>
+                </div>
+                <div class="report-content edit-section-body" contenteditable="true" spellcheck="false" data-section="{{ $section->id }}">
+                    {!! \App\Support\SectionContent::toHtml($section->content) ?: '<p></p>' !!}
+                </div>
+            </div>
+        @empty
+            <div class="edit-section-card">
+                <p class="edit-sections-empty">No sections yet. <a href="{{ route('reports.sections', ['report' => $report]) }}" class="ec-edit">Add content &#9998;</a></p>
+            </div>
+        @endforelse
+    </div>
+
     <form id="save-form" method="POST" action="{{ route('reports.front-overrides.save', ['report' => $report]) }}" style="display:none">
         @csrf
         @foreach ($report->editableFrontBlocks() as $block)
             <textarea name="blocks[{{ $block }}]" data-input="{{ $block }}"></textarea>
         @endforeach
+        @foreach ($report->sections as $section)
+            <textarea name="sections[{{ $section->id }}]" data-section-input="{{ $section->id }}"></textarea>
+        @endforeach
     </form>
 
     <script>
+        // Figures, captions and tables are atomic — lock them so quick text
+        // edits can't break the figure markup or its auto-numbered caption.
+        // Use "Open in editor" to change a figure/table or its caption.
+        document.addEventListener('DOMContentLoaded', function () {
+            document.querySelectorAll('.edit-section-body figure, .edit-section-body figcaption, .edit-section-body table, .edit-section-body img').forEach(function (el) {
+                el.setAttribute('contenteditable', 'false');
+            });
+        });
+
         function saveEdits() {
             document.querySelectorAll('#save-form [data-input]').forEach(function (input) {
                 var block = document.querySelector('[data-block="' + input.dataset.input + '"]');
                 if (block) {
                     input.value = block.innerHTML;
+                }
+            });
+            document.querySelectorAll('#save-form [data-section-input]').forEach(function (input) {
+                var body = document.querySelector('[data-section="' + input.dataset.sectionInput + '"]');
+                if (body) {
+                    input.value = body.innerHTML;
                 }
             });
             document.getElementById('save-form').submit();

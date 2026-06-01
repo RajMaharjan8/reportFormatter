@@ -313,7 +313,7 @@ class ReportCompiler
             $anchor = 'fig-'.$this->figureCount;
             $figure->setAttribute('id', $anchor);
 
-            $caption = $this->captionText($figure->getElementsByTagName('figcaption'));
+            $caption = $this->stripLabelPrefix($this->captionText($figure->getElementsByTagName('figcaption')), 'Figure');
             $label = $caption === '' ? "Figure {$this->figureCount}" : "Figure {$this->figureCount}: {$caption}";
 
             $this->figures[] = [
@@ -351,7 +351,7 @@ class ReportCompiler
                 }
             }
 
-            $caption = $captionEl instanceof DOMElement ? trim($captionEl->textContent) : '';
+            $caption = $this->stripLabelPrefix($captionEl instanceof DOMElement ? trim($captionEl->textContent) : '', 'Table');
             $label = $caption === '' ? "Table {$this->tableCount}" : "Table {$this->tableCount}: {$caption}";
 
             $this->tables[] = [
@@ -386,6 +386,17 @@ class ReportCompiler
         }
 
         return $elements;
+    }
+
+    /**
+     * Remove an auto-generated label the caption may already carry (e.g. a
+     * stored "Figure 1: " or "Table 2 -") so the fresh number isn't doubled.
+     * Only strips when a digit follows, leaving real captions like
+     * "Figure of speech" untouched.
+     */
+    protected function stripLabelPrefix(string $caption, string $kind): string
+    {
+        return trim((string) preg_replace('/^\s*'.$kind.'\s*\d+\s*[:.\-]?\s*/i', '', $caption));
     }
 
     protected function captionText(DOMNodeList $list): string

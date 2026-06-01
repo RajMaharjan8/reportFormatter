@@ -67,6 +67,9 @@ new class extends Component
                 </p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
+                <a href="{{ route('cover.templates') }}" wire:navigate class="inline-flex shrink-0 items-center rounded-md bg-white px-4 py-2 text-sm font-semibold text-gray-900 ring-1 ring-gray-300 hover:bg-gray-50">
+                    Cover Designer
+                </a>
                 <a href="{{ route('reports.check') }}" wire:navigate class="inline-flex shrink-0 items-center rounded-md bg-white px-4 py-2 text-sm font-semibold text-gray-900 ring-1 ring-gray-300 hover:bg-gray-50">
                     Check My Report
                 </a>

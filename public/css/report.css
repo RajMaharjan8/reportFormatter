@@ -127,6 +127,16 @@
 .tu-submitted-to { margin-top: 4px; font-size: 14px; line-height: 1.5; }
 .tu-date { margin-top: 16px; font-size: 14px; }
 
+/* ---- Custom (user-built) cover content -------------------- */
+/* Shared by the cover builder canvas and the rendered report so a saved cover
+   looks identical in both places. */
+.cover-sheet-custom { box-sizing: border-box; width: 210mm; min-height: 297mm; padding: 25mm; background: #fff; }
+.cover-custom { font-family: "Times New Roman", Times, serif; font-size: 12pt; line-height: 1.5; color: #111; }
+.cover-custom h1 { font-size: 22pt; font-weight: 700; text-align: center; margin: 0 0 10pt; }
+.cover-custom h2 { font-size: 16pt; font-weight: 700; text-align: center; margin: 0 0 8pt; }
+.cover-custom p { margin: 0 0 8pt; }
+.cover-custom img { max-width: 100%; height: auto; }
+
 /* ---- Title page ------------------------------------------- */
 .report-title-page {
     display: flex;
@@ -340,12 +350,24 @@
     display: block;
     margin: 0 auto;
     max-width: 100%;
+    /* Cap height so a full-page scan can't fill the sheet and push its caption
+       onto the next page; the image scales down keeping its aspect ratio. */
+    max-height: 200mm;
+    width: auto;
     height: auto;
+    object-fit: contain;
 }
 
 .report-content img {
     max-width: 100%;
+    max-height: 200mm;
     height: auto;
+}
+
+/* Keep an image and its caption together on one page. */
+.report-content figure.image,
+.report-content figure.report-figure {
+    break-inside: avoid;
 }
 
 .report-content figure.image figcaption,

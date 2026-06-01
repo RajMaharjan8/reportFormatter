@@ -65,6 +65,65 @@ new class extends Component
             ->search($this->activeSection->id) + 1;
     }
 
+    /**
+     * How many figures and tables appear in the body sections before the
+     * active one, so the editor can continue the count instead of restarting
+     * at 1 in every section (matching the compiled report).
+     *
+     * @return array{figures: int, tables: int}
+     */
+    public function getFigureTableOffsetProperty(): array
+    {
+        if (! $this->activeSection || $this->activeSection->isFrontPage()) {
+            return ['figures' => 0, 'tables' => 0];
+        }
+
+        $figures = 0;
+        $tables = 0;
+
+        $prior = $this->report->sections()
+            ->where('placement', 'body')
+            ->where('order', '<', $this->activeSection->order)
+            ->orderBy('order')
+            ->get();
+
+        foreach ($prior as $section) {
+            [$f, $t] = $this->countFiguresTables(\App\Support\SectionContent::toHtml($section->content));
+            $figures += $f;
+            $tables += $t;
+        }
+
+        return ['figures' => $figures, 'tables' => $tables];
+    }
+
+    /**
+     * Count figures (a <figure> containing an <img>) and tables in a chunk of
+     * HTML — the same rule the report compiler uses for numbering.
+     *
+     * @return array{0: int, 1: int}
+     */
+    protected function countFiguresTables(string $html): array
+    {
+        if (trim($html) === '') {
+            return [0, 0];
+        }
+
+        $document = new \DOMDocument;
+        libxml_use_internal_errors(true);
+        $document->loadHTML('<?xml encoding="UTF-8"><div>'.$html.'</div>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+        libxml_clear_errors();
+
+        $figures = 0;
+
+        foreach ($document->getElementsByTagName('figure') as $figure) {
+            if ($figure->getElementsByTagName('img')->length > 0) {
+                $figures++;
+            }
+        }
+
+        return [$figures, $document->getElementsByTagName('table')->length];
+    }
+
     public function addSection(): void
     {
         if ($this->createPage($this->newSectionTitle, 'body')) {
@@ -422,9 +481,38 @@ new class extends Component
                         </ul>
                     </div>
 
-                    {{-- Editable area --}}
+                    {{-- Editable area. The figure/table counters start from the
+                         number of figures/tables in earlier sections so the
+                         editor matches the report's continuous numbering. --}}
                     <div wire:ignore>
-                        <div x-ref="content" contenteditable="true" spellcheck="true" class="se-content {{ $activeSection->isFrontPage() ? 'se-front-page' : '' }}"></div>
+                        <div x-ref="content" contenteditable="true" spellcheck="true"
+                            style="counter-reset: h2 0 figure {{ $this->figureTableOffset['figures'] }} table {{ $this->figureTableOffset['tables'] }}"
+                            class="se-content {{ $activeSection->isFrontPage() ? 'se-front-page' : '' }}"></div>
+                    </div>
+
+                    {{-- Transient notice (replaces window.alert) --}}
+                    <div x-show="notice" x-transition x-cloak class="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center">
+                        <div class="pointer-events-auto rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white shadow-lg" x-text="notice"></div>
+                    </div>
+
+                    {{-- Image caption modal (replaces window.prompt) --}}
+                    <div x-show="imageModalOpen" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" x-on:keydown.escape.window="cancelImage()">
+                        <div class="w-full max-w-md rounded-lg bg-white p-5 shadow-xl" x-on:click.outside="cancelImage()">
+                            <h3 class="text-base font-semibold text-gray-900">Add a figure caption</h3>
+                            <p class="mt-1 text-xs text-gray-500">Describe the image, e.g. <em>OMR answer sheet</em>. The <strong>Figure&nbsp;number</strong> is added automatically &mdash; don't type &ldquo;Figure 1&rdquo;. Leave blank for no caption.</p>
+                            <input
+                                type="text"
+                                x-ref="imageCaptionInput"
+                                x-model="imageCaption"
+                                x-on:keydown.enter.prevent="confirmImage()"
+                                placeholder="e.g. OMR answer sheet"
+                                class="mt-3 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            >
+                            <div class="mt-4 flex justify-end gap-2">
+                                <button type="button" x-on:click="cancelImage()" class="rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50">Cancel</button>
+                                <button type="button" x-on:click="confirmImage()" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500">Insert image</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             @else
