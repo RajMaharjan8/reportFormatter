@@ -13,6 +13,18 @@ Route::get('/auth/google/redirect', [GoogleAuthController::class, 'redirect'])->
 Route::get('/auth/google/callback', [GoogleAuthController::class, 'callback'])->name('auth.google.callback');
 Route::post('/logout', [GoogleAuthController::class, 'logout'])->name('logout');
 
+// Admin sign-in is password based (regular users use Google), so it lives
+// outside the auth group and the admin gate.
+Route::livewire('/admin/login', 'pages::admin.login')->name('admin.login');
+
+Route::middleware(['auth', 'admin'])->group(function () {
+    Route::livewire('/admin', 'pages::admin.dashboard')->name('admin.dashboard');
+    Route::livewire('/admin/users', 'pages::admin.users')->name('admin.users');
+    Route::livewire('/admin/feedback', 'pages::admin.feedback')->name('admin.feedback');
+    Route::livewire('/admin/mail', 'pages::admin.mail')->name('admin.mail');
+    Route::livewire('/admin/password', 'pages::admin.password')->name('admin.password');
+});
+
 Route::middleware('auth')->group(function () {
     Route::livewire('/', 'pages::reports-index')->name('reports.index');
 

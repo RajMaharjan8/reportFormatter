@@ -37,6 +37,9 @@ export function registerEditorComponent(Alpine) {
         imageCaption: '',
         pendingImageSrc: null,
 
+        // Warning shown when a chosen image is too large to embed.
+        imageError: '',
+
         // Transient toolbar notice (replaces window.alert).
         notice: '',
 
@@ -195,6 +198,15 @@ export function registerEditorComponent(Alpine) {
                 return
             }
 
+            const maxBytes = 2 * 1024 * 1024
+            if (file.size > maxBytes) {
+                const sizeMb = (file.size / (1024 * 1024)).toFixed(1)
+                this.imageError = `That image is ${sizeMb} MB. Please use an image under 2 MB.`
+
+                return
+            }
+
+            this.imageError = ''
             this.saveSelection()
 
             const reader = new FileReader()
@@ -237,6 +249,7 @@ export function registerEditorComponent(Alpine) {
             this.pendingImageSrc = null
             this.imageCaption = ''
             this.imageModalOpen = false
+            this.imageError = ''
         },
 
         /** Insert an editable table with a name that feeds the Table of Tables. */

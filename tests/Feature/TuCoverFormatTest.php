@@ -174,3 +174,30 @@ it('does not require London Met fields when the TU format is chosen', function (
         ->call('save')
         ->assertHasNoErrors(['module_code', 'module_title', 'london_id', 'college_id']);
 });
+
+it('uses each student\'s chosen honorific on the recommendation page', function () {
+    $report = tuReport([
+        'tu_students' => [
+            ['title' => 'Miss', 'name' => 'Sita Sharma', 'roll' => '700076', 'batch' => '2079'],
+            ['title' => 'Mrs.', 'name' => 'Gita Rai', 'roll' => '700077', 'batch' => '2079'],
+        ],
+    ]);
+
+    $this->get(route('reports.output', $report))
+        ->assertOk()
+        ->assertSee('Miss Sita Sharma')
+        ->assertSee('Mrs. Gita Rai')
+        ->assertDontSee('Mr. Sita Sharma');
+});
+
+it('uses the single student honorific when no group list is set', function () {
+    $report = tuReport([
+        'tu_students' => [],
+        'student_name' => 'Gita Rai',
+        'student_title' => 'Mrs.',
+    ]);
+
+    $this->get(route('reports.output', $report))
+        ->assertOk()
+        ->assertSee('Mrs. Gita Rai');
+});

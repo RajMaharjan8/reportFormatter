@@ -495,6 +495,15 @@ new class extends Component
                         <div class="pointer-events-auto rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white shadow-lg" x-text="notice"></div>
                     </div>
 
+                    {{-- Image too large warning --}}
+                    <div x-show="imageError" x-transition x-cloak class="fixed inset-x-0 top-6 z-50 flex justify-center px-4">
+                        <div class="flex max-w-md items-start gap-3 rounded-md bg-red-50 px-4 py-3 text-sm font-medium text-red-800 shadow-lg ring-1 ring-red-200">
+                            <span aria-hidden="true" class="mt-0.5">&#9888;</span>
+                            <span class="flex-1" x-text="imageError"></span>
+                            <button type="button" x-on:click="imageError = ''" class="-mr-1 text-red-500 hover:text-red-700" title="Dismiss">&times;</button>
+                        </div>
+                    </div>
+
                     {{-- Image caption modal (replaces window.prompt) --}}
                     <div x-show="imageModalOpen" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" x-on:keydown.escape.window="cancelImage()">
                         <div class="w-full max-w-md rounded-lg bg-white p-5 shadow-xl" x-on:click.outside="cancelImage()">

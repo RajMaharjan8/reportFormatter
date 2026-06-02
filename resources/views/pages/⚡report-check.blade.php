@@ -70,6 +70,8 @@ new class extends Component
 }; ?>
 
 <div class="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <x-validation-popup />
+
     <div class="mx-auto max-w-3xl">
         <div class="mb-6">
             <a href="{{ route('reports.index') }}" wire:navigate class="text-sm font-medium text-indigo-600 hover:text-indigo-500">&larr; All reports</a>

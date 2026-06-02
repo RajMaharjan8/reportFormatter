@@ -2,6 +2,8 @@
 
 use App\Models\Report;
 use App\Models\User;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Validate;
 use Livewire\Component;
@@ -63,6 +65,13 @@ new class extends Component
     #[Validate('nullable|string|max:255')]
     public string $student_name = '';
 
+    /** Honorific shown before the student's name on the recommendation page. */
+    #[Validate('nullable|string|max:10')]
+    public string $student_title = 'Mr.';
+
+    /** @var list<string> */
+    public const TITLES = ['Mr.', 'Miss', 'Mrs.'];
+
     #[Validate('nullable|string|max:50')]
     public string $london_id = '';
 
@@ -110,6 +119,7 @@ new class extends Component
             $this->semester = (string) $report->semester;
             $this->academic_year = (string) $report->academic_year;
             $this->student_name = (string) $report->student_name;
+            $this->student_title = (string) ($report->student_title ?: 'Mr.');
             $this->london_id = (string) $report->london_id;
             $this->college_id = (string) $report->college_id;
             $this->assignment_due_date = $report->assignment_due_date?->format('Y-m-d') ?? '';
@@ -132,6 +142,37 @@ new class extends Component
     }
 
     /**
+     * Human-friendly field names so validation messages read naturally
+     * (e.g. "The campus name field is required." instead of "tu college name").
+     *
+     * @return array<string, string>
+     */
+    protected function validationAttributes(): array
+    {
+        return [
+            'tu_college_name' => 'campus name',
+            'tu_institute' => 'institute',
+            'tu_department' => 'department',
+            'tu_campus_address' => 'campus address',
+            'tu_report_type' => 'report type',
+            'tu_supervisor_name' => 'supervisor name',
+            'tu_degree' => 'degree',
+            'tu_roll_number' => 'roll number',
+            'student_name' => 'student name',
+            'title' => 'title',
+            'module_code' => 'module code',
+            'module_title' => 'module title',
+            'london_id' => 'London Met ID',
+            'college_id' => 'College ID',
+            'assessment_type' => 'assessment type',
+            'academic_year' => 'academic year',
+            'submission_date' => 'submission date',
+            'assignment_due_date' => 'assignment due date',
+            'custom_cover_id' => 'saved cover',
+        ];
+    }
+
+    /**
      * Every cover field, all optional — the baseline for drafts.
      *
      * @return array<string, string>
@@ -149,9 +190,11 @@ new class extends Component
             'tu_supervisor_name' => 'nullable|string|max:255',
             'tu_degree' => 'nullable|string|max:255',
             'tu_students' => 'nullable|array',
+            'tu_students.*.title' => 'nullable|string|max:10',
             'tu_students.*.name' => 'nullable|string|max:255',
             'tu_students.*.roll' => 'nullable|string|max:50',
             'tu_students.*.batch' => 'nullable|string|max:50',
+            'student_title' => 'nullable|string|max:10',
             'tu_roll_number' => 'nullable|string|max:50',
             'tu_submitted_to_position' => 'nullable|string|max:255',
             'module_code' => 'nullable|string|max:50',
@@ -225,15 +268,220 @@ new class extends Component
         return $data;
     }
 
+    /**
+     * The "Submitted by" group list, when used, hides the single student
+     * fields. Mirror the first group member into the scalar properties the
+     * TU cover rules require so validation passes for group projects.
+     */
+    protected function syncPrimaryStudentFromGroup(): void
+    {
+        if ($this->tu_students === []) {
+            return;
+        }
+
+        $first = $this->tu_students[0];
+
+        $this->student_name = trim((string) ($first['name'] ?? ''));
+        $this->tu_roll_number = trim((string) ($first['roll'] ?? ''));
+        $this->student_title = trim((string) ($first['title'] ?? 'Mr.')) ?: 'Mr.';
+    }
+
     public function addTuStudent(): void
     {
-        $this->tu_students[] = ['name' => '', 'roll' => '', 'batch' => ''];
+        // Moving from the single-student fields into the group list: carry the
+        // already-entered student in as the first row so they aren't lost.
+        if ($this->tu_students === [] && (trim($this->student_name) !== '' || trim($this->tu_roll_number) !== '')) {
+            $this->tu_students[] = [
+                'title' => $this->student_title ?: 'Mr.',
+                'name' => $this->student_name,
+                'roll' => $this->tu_roll_number,
+                'batch' => '',
+            ];
+        }
+
+        $this->tu_students[] = ['title' => 'Mr.', 'name' => '', 'roll' => '', 'batch' => ''];
     }
 
     public function removeTuStudent(int $index): void
     {
         unset($this->tu_students[$index]);
         $this->tu_students = array_values($this->tu_students);
+    }
+
+    /**
+     * Fill the cover fields for the chosen format with realistic example
+     * values so a student can preview a finished cover quickly. Only blank
+     * fields are touched, so anything already typed is preserved.
+     */
+    public function autofill()
+    {
+        $this->fillSampleFields();
+
+        // The section/reference demo can only attach to a standard, saved
+        // report. Custom covers and the report cap fall back to field-fill only.
+        if (! in_array($this->cover_format, ['tu', 'london_met'], true)) {
+            return null;
+        }
+
+        if ($this->report === null) {
+            if (Auth::user()->hasReachedReportLimit()) {
+                return $this->redirectToReportLimitNotice();
+            }
+
+            $this->syncPrimaryStudentFromGroup();
+            $this->report = $this->persist($this->normalizeDates($this->validate($this->coverRules())));
+        }
+
+        $this->seedDemoContent();
+
+        session()->flash('demo-added', 'Demo report ready — example cover, an acknowledgement, two sample sections, and a References section with a cited reference were added.');
+
+        return null;
+    }
+
+    /**
+     * Fill empty cover fields with realistic sample values for the chosen
+     * format, leaving anything the user already typed untouched.
+     */
+    protected function fillSampleFields(): void
+    {
+        $samples = $this->cover_format === 'tu'
+            ? [
+                'tu_college_name' => 'Amrit Campus',
+                'tu_institute' => 'Institute of Science and Technology',
+                'tu_department' => 'Department of Computer Science & Information Technology',
+                'tu_campus_address' => 'Thamel, Kathmandu',
+                'tu_report_type' => 'Project Work Report',
+                'tu_supervisor_name' => 'Mr. Akkal Bahadur Bist',
+                'tu_degree' => 'Bachelor of Science in Computer Science and Information Technology (B.Sc. CSIT)',
+                'title' => 'A Study of Renewable Energy Adoption in Urban Nepal',
+                'student_name' => 'Sita Sharma',
+                'tu_roll_number' => '700076',
+                'semester' => 'VII Semester',
+                'submission_date' => now()->format('Y-m-d'),
+            ]
+            : [
+                'module_code' => 'MN7983NI',
+                'module_title' => 'Management Learning and Research',
+                'title' => "Amazon's Fulfilment Network",
+                'assessment_type' => 'Individual Report',
+                'semester' => 'Spring',
+                'academic_year' => '2024/25',
+                'student_name' => 'Sita Sharma',
+                'london_id' => '25030253',
+                'college_id' => 'np01mb7a250180@islingtoncollege.edu.np',
+                'submitted_to' => 'Ichchhuk Poudel',
+                'assignment_due_date' => now()->addWeeks(2)->format('Y-m-d'),
+                'submission_date' => now()->format('Y-m-d'),
+            ];
+
+        foreach ($samples as $field => $value) {
+            if (trim((string) $this->{$field}) === '') {
+                $this->{$field} = $value;
+            }
+        }
+
+        // For TU group projects, seed a first student row only when none exist.
+        if ($this->cover_format === 'tu' && $this->tu_students === []) {
+            $this->tu_students = [[
+                'title' => $this->student_title ?: 'Mr.',
+                'name' => $this->student_name,
+                'roll' => $this->tu_roll_number,
+                'batch' => '2079',
+            ]];
+        }
+    }
+
+    /**
+     * Add a demo acknowledgement front page, two body sections that cite a
+     * reference, and a dedicated References section (always last) holding the
+     * auto-generated bibliography. Skips quietly if the report already has body
+     * content so it never duplicates.
+     */
+    protected function seedDemoContent(): void
+    {
+        $report = $this->report;
+
+        if ($report === null || $report->sections()->where('placement', 'body')->exists()) {
+            return;
+        }
+
+        // Acknowledgement is front matter, shown before the body sections.
+        $report->sections()->create([
+            'placement' => 'front',
+            'title' => 'Acknowledgement',
+            'order' => ($report->sections()->where('placement', 'front')->max('order') ?? -1) + 1,
+            'content' => '<p>I would like to express my sincere gratitude to my supervisor and the faculty '
+                .'for their continuous guidance and support throughout this work. I am also thankful to my '
+                .'family and friends for their encouragement during the preparation of this report.</p>',
+        ]);
+
+        $reference = $report->references()->create([
+            'type' => 'journal',
+            'data' => Arr::random([
+                ['authors' => 'Anderson, K. and Mehta, R.', 'year' => '2021', 'title' => 'Drivers of clean energy adoption in emerging cities', 'journal' => 'Energy Policy Review', 'volume' => '18', 'issue' => '3', 'pages' => '221-238'],
+                ['authors' => 'Thompson, L.', 'year' => '2020', 'title' => 'Operations strategy in global fulfilment networks', 'journal' => 'Journal of Operations Management', 'volume' => '42', 'issue' => '1', 'pages' => '55-74'],
+                ['authors' => 'Gurung, S. and Patel, N.', 'year' => '2022', 'title' => 'A review of distributed systems reliability', 'journal' => 'Computing Frontiers', 'volume' => '9', 'issue' => '2', 'pages' => '110-129'],
+            ]),
+        ]);
+
+        $citation = '<span class="ref-cite" data-ref-id="'.$reference->id.'" contenteditable="false">'
+            .e($this->demoInlineCitation($report, $reference->data)).'</span>';
+
+        $intro = Arr::random([
+            'This report examines the topic in depth, drawing on recent academic work to frame the discussion.',
+            'The following study sets out the background, scope, and aims of the work undertaken.',
+            'This section introduces the problem and explains why it is relevant to the field today.',
+        ]);
+
+        $report->sections()->create([
+            'placement' => 'body',
+            'title' => 'Introduction',
+            'order' => 0,
+            'content' => '<p>'.$intro.' Prior research supports this position '.$citation.'.</p>'
+                .'<p>The remainder of the report builds on this foundation with analysis and discussion.</p>',
+        ]);
+
+        $discussion = Arr::random([
+            'The findings indicate a clear trend that aligns with the wider literature on the subject.',
+            'Analysis of the data reveals several patterns worth examining in more detail.',
+            'The results are discussed below, with attention to their practical implications.',
+        ]);
+
+        $report->sections()->create([
+            'placement' => 'body',
+            'title' => 'Discussion',
+            'order' => 1,
+            'content' => '<p>'.$discussion.' These observations are consistent with earlier work '.$citation.'.</p>'
+                .'<p>Overall, the evidence points to a coherent and well-supported conclusion.</p>',
+        ]);
+
+        // References always live in their own section, placed last.
+        $report->sections()->create([
+            'placement' => 'body',
+            'title' => 'References',
+            'order' => 2,
+            'content' => '<div class="references-list-placeholder" data-references-list contenteditable="false">References list (auto-generated — shows the references you actually cite)</div>',
+        ]);
+    }
+
+    /**
+     * Build the in-text citation label matching the report's reference format,
+     * e.g. "(Anderson, 2021)" for Harvard/APA or "[1]" for IEEE. The compiler
+     * re-renders this on output, so it only needs to read sensibly in the editor.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    protected function demoInlineCitation(Report $report, array $data): string
+    {
+        if ($report->citationFormat() === 'ieee') {
+            return '[1]';
+        }
+
+        $authors = (string) ($data['authors'] ?? '');
+        $surname = trim((string) Str::of($authors)->before(',')->before(' and ')->before(' & '));
+
+        return '('.($surname !== '' ? $surname : 'Author').', '.($data['year'] ?? 'n.d.').')';
     }
 
     /**
@@ -246,6 +494,12 @@ new class extends Component
     {
         $coverId = $data['custom_cover_id'] ?? null;
         unset($data['custom_cover_id']);
+
+        // New TU reports follow the IEEE numbered citation style (the Nepali
+        // university convention); London Met reports use the Harvard variant.
+        if ($this->report === null) {
+            $data['reference_format'] = $this->cover_format === 'tu' ? 'ieee' : 'london_met';
+        }
 
         $report = $this->report
             ? tap($this->report)->update($data)
@@ -272,6 +526,8 @@ new class extends Component
             return $this->redirectToReportLimitNotice();
         }
 
+        $this->syncPrimaryStudentFromGroup();
+
         $saved = $this->persist($this->normalizeDates($this->validate($this->coverRules())));
 
         return $this->redirectRoute('reports.cover', ['report' => $saved], navigate: true);
@@ -285,6 +541,8 @@ new class extends Component
         if ($this->report === null && Auth::user()->hasReachedReportLimit()) {
             return $this->redirectToReportLimitNotice();
         }
+
+        $this->syncPrimaryStudentFromGroup();
 
         $saved = $this->persist($this->normalizeDates($this->validate($this->draftRules())));
 
@@ -300,6 +558,8 @@ new class extends Component
 }; ?>
 
 <div class="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <x-validation-popup />
+
     <div class="mx-auto max-w-3xl">
         <div class="mb-6">
             <a href="{{ route('reports.index') }}" wire:navigate class="text-sm font-medium text-indigo-600 hover:text-indigo-500">&larr; All reports</a>
@@ -318,11 +578,31 @@ new class extends Component
                     Islington College &middot; London Metropolitan University
                 @endif
             </p>
+
+            <div class="mt-4">
+                <button type="button" wire:click="autofill" class="inline-flex items-center gap-1.5 rounded-md bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 ring-1 ring-indigo-200 hover:bg-indigo-100">
+                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z" /></svg>
+                    <span wire:loading.remove wire:target="autofill">Auto-generate demo report</span>
+                    <span wire:loading wire:target="autofill">Generating…</span>
+                </button>
+                <p class="mt-1 text-xs text-gray-400">Fills the cover, then adds two sample sections and a cited reference so you can preview a full report. Your entries are kept.</p>
+            </div>
         </div>
 
         @if (session('draft-saved'))
             <div class="mb-6 rounded-md bg-green-50 px-4 py-3 text-sm font-medium text-green-800 ring-1 ring-green-200">
                 {{ session('draft-saved') }}
+            </div>
+        @endif
+
+        @if (session('demo-added') && $this->report)
+            <div class="mb-6 rounded-md bg-green-50 px-4 py-3 text-sm text-green-800 ring-1 ring-green-200">
+                <p class="font-medium">{{ session('demo-added') }}</p>
+                <p class="mt-1">
+                    <a href="{{ route('reports.sections', $report) }}" wire:navigate class="font-semibold underline hover:text-green-900">Write content &rarr;</a>
+                    <span class="mx-1 text-green-400">&middot;</span>
+                    <a href="{{ route('reports.output', $report) }}" class="font-semibold underline hover:text-green-900">Preview full report &rarr;</a>
+                </p>
             </div>
         @endif
 
@@ -468,7 +748,14 @@ new class extends Component
                     <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div class="sm:col-span-2">
                             <label for="tu_student_name" class="block text-sm font-medium text-gray-700">Name <span class="text-red-500">*</span></label>
-                            <input type="text" id="tu_student_name" wire:model="student_name" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <div class="mt-1 flex gap-2">
+                                <select wire:model="student_title" class="w-24 shrink-0 rounded-md px-2 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                    @foreach (self::TITLES as $option)
+                                        <option value="{{ $option }}">{{ $option }}</option>
+                                    @endforeach
+                                </select>
+                                <input type="text" id="tu_student_name" wire:model="student_name" class="block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            </div>
                             @error('student_name') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
                         </div>
 
@@ -488,7 +775,15 @@ new class extends Component
                     <div class="mt-4 space-y-4">
                         @foreach ($tu_students as $index => $student)
                             <div wire:key="tu-student-{{ $index }}" class="grid grid-cols-1 gap-3 rounded-md ring-1 ring-gray-200 p-3 sm:grid-cols-12">
-                                <div class="sm:col-span-5">
+                                <div class="sm:col-span-2">
+                                    <label class="block text-xs font-medium text-gray-700">Title</label>
+                                    <select wire:model="tu_students.{{ $index }}.title" class="mt-1 block w-full rounded-md px-2 py-1.5 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                        @foreach (self::TITLES as $option)
+                                            <option value="{{ $option }}">{{ $option }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                                <div class="sm:col-span-4">
                                     <label class="block text-xs font-medium text-gray-700">Name</label>
                                     <input type="text" wire:model="tu_students.{{ $index }}.name" class="mt-1 block w-full rounded-md px-2 py-1.5 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
                                 </div>
@@ -496,7 +791,7 @@ new class extends Component
                                     <label class="block text-xs font-medium text-gray-700">Roll No.</label>
                                     <input type="text" wire:model="tu_students.{{ $index }}.roll" placeholder="700076" class="mt-1 block w-full rounded-md px-2 py-1.5 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
                                 </div>
-                                <div class="sm:col-span-3">
+                                <div class="sm:col-span-2">
                                     <label class="block text-xs font-medium text-gray-700">Batch</label>
                                     <input type="text" wire:model="tu_students.{{ $index }}.batch" placeholder="2079" class="mt-1 block w-full rounded-md px-2 py-1.5 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
                                 </div>
@@ -506,6 +801,10 @@ new class extends Component
                             </div>
                         @endforeach
                     </div>
+
+                    @if ($errors->has('student_name') || $errors->has('tu_roll_number'))
+                        <p class="mt-2 text-xs text-red-600">The first student needs a name and roll number — they appear as the main student on the report.</p>
+                    @endif
 
                     <div class="mt-3">
                         <label for="tu_submission_date" class="block text-sm font-medium text-gray-700">Submission date</label>

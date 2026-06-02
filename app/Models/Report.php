@@ -53,6 +53,7 @@ class Report extends Model
         'semester',
         'academic_year',
         'student_name',
+        'student_title',
         'london_id',
         'college_id',
         'assignment_due_date',

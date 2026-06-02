@@ -1,13 +1,32 @@
 <?php
 
+use App\Mail\FeedbackSubmitted;
+use App\Models\Feedback;
 use App\Models\Report;
+use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Mail;
+use Livewire\Attributes\Validate;
 use Livewire\Component;
 
 new class extends Component
 {
+    #[Validate('nullable|string|max:2000')]
+    public string $fb_working = '';
+
+    #[Validate('nullable|string|max:2000')]
+    public string $fb_not_working = '';
+
+    /** @return array<string, string> */
+    protected function validationAttributes(): array
+    {
+        return [
+            'fb_working' => "what's working",
+            'fb_not_working' => "what's not working",
+        ];
+    }
     /**
      * The signed-in user's reports, newest activity first.
      *
@@ -38,19 +57,70 @@ new class extends Component
         $this->authorize('delete', $report);
         $report->delete();
     }
+
+    /**
+     * Store the user's feedback and email it to the configured admin address
+     * via the admin-managed SMTP settings.
+     */
+    public function sendFeedback(): void
+    {
+        $this->validate();
+
+        if (trim($this->fb_working) === '' && trim($this->fb_not_working) === '') {
+            $this->addError('fb_working', 'Please tell us what is working or what is not.');
+
+            return;
+        }
+
+        $feedback = Feedback::create([
+            'user_id' => Auth::id(),
+            'working' => $this->fb_working ?: null,
+            'not_working' => $this->fb_not_working ?: null,
+        ]);
+
+        $recipient = Setting::get('admin_notification_email', config('mail.from.address'));
+
+        if ($recipient) {
+            try {
+                Mail::to($recipient)->send(new FeedbackSubmitted($feedback->load('user')));
+            } catch (\Throwable $e) {
+                // The feedback is saved regardless; don't fail the user's action
+                // if the mail server is misconfigured.
+                report($e);
+            }
+        }
+
+        $this->reset('fb_working', 'fb_not_working');
+
+        session()->flash('feedback-sent', 'Thanks for your feedback!');
+
+        $this->dispatch('feedback-sent');
+    }
 }; ?>
 
-<div class="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+<div class="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8" x-data="{ feedbackOpen: false }" @feedback-sent.window="feedbackOpen = false">
+    <x-validation-popup />
+
     <div class="mx-auto max-w-4xl">
         <div class="mb-6 flex items-center justify-between gap-4 text-sm">
             <div class="text-gray-600">
                 Signed in as <span class="font-medium text-gray-900">{{ auth()->user()->email }}</span>
             </div>
-            <form method="POST" action="{{ route('logout') }}">
-                @csrf
-                <button type="submit" class="text-gray-600 hover:text-gray-900 underline">Sign out</button>
-            </form>
+            <div class="flex items-center gap-4">
+                @if (auth()->user()->isAdmin())
+                    <a href="{{ route('admin.dashboard') }}" wire:navigate class="font-medium text-indigo-600 hover:text-indigo-500">Admin panel</a>
+                @endif
+                <button type="button" x-on:click="feedbackOpen = true" class="text-gray-600 hover:text-gray-900 underline">Send feedback</button>
+                <form method="POST" action="{{ route('logout') }}">
+                    @csrf
+                    <button type="submit" class="text-gray-600 hover:text-gray-900 underline">Sign out</button>
+                </form>
+            </div>
         </div>
+
+        @if (session('feedback-sent'))
+            <div class="mb-6 rounded-md bg-green-50 px-4 py-3 text-sm font-medium text-green-800 ring-1 ring-green-200">{{ session('feedback-sent') }}</div>
+        @endif
 
         @if (session('report-limit'))
             <div class="mb-6 rounded-md bg-amber-50 p-4 text-sm text-amber-800 ring-1 ring-amber-200">
@@ -137,5 +207,40 @@ new class extends Component
                 @endforeach
             </ul>
         @endif
+    </div>
+
+    {{-- Feedback modal --}}
+    <div x-show="feedbackOpen" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" x-on:keydown.escape.window="feedbackOpen = false">
+        <div class="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl" x-on:click.outside="feedbackOpen = false">
+            <div class="flex items-start justify-between">
+                <div>
+                    <h2 class="text-lg font-semibold text-gray-900">Send feedback</h2>
+                    <p class="mt-0.5 text-sm text-gray-500">Tell us how the report generator is working for you.</p>
+                </div>
+                <button type="button" x-on:click="feedbackOpen = false" class="text-gray-400 hover:text-gray-600" title="Close">&times;</button>
+            </div>
+
+            <form wire:submit="sendFeedback" class="mt-4 space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">What's working for you?</label>
+                    <textarea wire:model="fb_working" rows="3" placeholder="Things you like or that work well…" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+                    @error('fb_working') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">What's not working?</label>
+                    <textarea wire:model="fb_not_working" rows="3" placeholder="Problems, bugs, or things you'd change…" class="mt-1 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+                    @error('fb_not_working') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                </div>
+
+                <div class="flex justify-end gap-3">
+                    <button type="button" x-on:click="feedbackOpen = false" class="rounded-md bg-white px-4 py-2 text-sm font-semibold text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50">Cancel</button>
+                    <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+                        <span wire:loading.remove wire:target="sendFeedback">Send feedback</span>
+                        <span wire:loading wire:target="sendFeedback">Sending…</span>
+                    </button>
+                </div>
+            </form>
+        </div>
     </div>
 </div>

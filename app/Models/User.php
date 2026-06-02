@@ -12,7 +12,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Str;
 
-#[Fillable(['name', 'email', 'password', 'google_id', 'avatar_url'])]
+#[Fillable(['name', 'email', 'password', 'google_id', 'avatar_url', 'is_admin', 'suspended_at'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -31,6 +31,16 @@ class User extends Authenticatable
         return $this->reports()->count() >= self::MAX_REPORTS;
     }
 
+    public function isAdmin(): bool
+    {
+        return (bool) $this->is_admin;
+    }
+
+    public function isSuspended(): bool
+    {
+        return $this->suspended_at !== null;
+    }
+
     /**
      * Get the attributes that should be cast.
      *
@@ -41,6 +51,9 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_admin' => 'boolean',
+            'suspended_at' => 'datetime',
+            'last_active_at' => 'datetime',
         ];
     }
 

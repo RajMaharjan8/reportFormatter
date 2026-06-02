@@ -11,6 +11,7 @@
 
     if ($students === [] && filled($report->student_name)) {
         $students[] = [
+            'title' => $report->student_title ?: 'Mr.',
             'name' => $report->student_name,
             'roll' => $report->tu_roll_number,
             'batch' => null,
@@ -32,11 +33,12 @@
         ->implode('; ') ?: '[TU Roll No./Batch]';
 
     $recommendationStudents = collect($students)->map(function ($s) {
+        $title = filled($s['title'] ?? null) ? trim($s['title']) : 'Mr.';
         $name = filled($s['name'] ?? null) ? $s['name'] : 'Your Name';
         $roll = filled($s['roll'] ?? null) ? ' / Roll No.'.$s['roll'] : '';
         $batch = filled($s['batch'] ?? null) ? ' / Batch '.$s['batch'] : '';
 
-        return '[Mr. '.$name.$roll.$batch.']';
+        return '['.$title.' '.$name.$roll.$batch.']';
     })->implode(', ');
 
     if ($recommendationStudents === '') {
