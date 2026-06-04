@@ -90,6 +90,17 @@
         }
         .report-toolbar .report-download:hover { background: #eef2ff; }
 
+        .report-toolbar .pay-label { font-size: 13px; font-weight: 600; color: #374151; }
+        .report-toolbar .pay-btn { background: #4f46e5; }
+        .report-toolbar .pay-esewa { background: #60bb46; }
+        .report-toolbar .pay-esewa:hover { background: #4ea537; }
+        .report-toolbar .pay-khalti { background: #5c2d91; }
+        .report-toolbar .pay-khalti:hover { background: #4a2475; }
+
+        .report-flash { max-width: 210mm; margin: 12px auto -4px; padding: 10px 16px; border-radius: 6px; font-size: 14px; font-weight: 500; }
+        .report-flash-success { background: #ecfdf5; color: #065f46; }
+        .report-flash-error { background: #fef2f2; color: #b91c1c; }
+
         .report-loading { padding: 80px 20px; text-align: center; color: #6b7280; font-size: 14px; }
         body.is-paginated .report-loading { display: none; }
 
@@ -264,9 +275,27 @@
             @if ($canEdit)
                 <a href="{{ route('reports.output', ['report' => $report, 'edit' => 1]) }}" class="report-download">Edit pages</a>
             @endif
-            <button type="button" onclick="window.print()">Print / Save as PDF</button>
+
+            @if ($downloadUnlocked)
+                <button type="button" onclick="downloadReport()">Print / Save as PDF</button>
+            @else
+                <span class="pay-label">Pay Rs.&nbsp;{{ number_format($downloadPrice, 2) }} to download:</span>
+                @foreach ($enabledGateways as $gateway)
+                    <form method="POST" action="{{ route('reports.pay', ['report' => $report, 'gateway' => $gateway]) }}" style="display:inline">
+                        @csrf
+                        <button type="submit" class="pay-btn pay-{{ $gateway }}">Pay with {{ ucfirst($gateway) }}</button>
+                    </form>
+                @endforeach
+            @endif
         </div>
     </div>
+
+    @if (session('payment-success'))
+        <div class="report-flash report-flash-success">{{ session('payment-success') }}</div>
+    @endif
+    @if (session('payment-error'))
+        <div class="report-flash report-flash-error">{{ session('payment-error') }}</div>
+    @endif
 
     <div class="report-loading">Preparing your report&hellip;</div>
 
@@ -372,6 +401,23 @@
             @endforelse
         </div>
     </template>
+
+    <script>
+        // Spend the one-shot download unlock (so the next download requires a
+        // fresh payment) right before opening the print dialog. When downloads
+        // are free this endpoint is a no-op.
+        function downloadReport() {
+            @if ($paymentRequired)
+                fetch(@json(route('reports.download.consume', ['report' => $report])), {
+                    method: 'POST',
+                    headers: { 'X-CSRF-TOKEN': @json(csrf_token()) },
+                    keepalive: true,
+                }).finally(function () { window.print(); });
+            @else
+                window.print();
+            @endif
+        }
+    </script>
 @endif
 </body>
 </html>

@@ -1,14 +1,23 @@
 <?php
 
 use App\Http\Controllers\Auth\GoogleAuthController;
+use App\Http\Controllers\PaymentController;
 use App\Models\CoverTemplate;
+use App\Models\Payment;
 use App\Models\Report;
+use App\Support\Payments\PaymentSettings;
 use App\Support\ReportCompiler;
 use App\Support\ReportWord;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
-Route::view('/login', 'auth.login')->name('login');
+// Guest auth: email/password sign-in & registration (with email OTP) alongside
+// Google. Already-authenticated users are bounced to the app by each component.
+Route::livewire('/login', 'pages::auth.login')->name('login');
+Route::livewire('/register', 'pages::auth.register')->name('register');
+Route::livewire('/verify-otp', 'pages::auth.verify-otp')->name('verify-otp');
+Route::livewire('/forgot-password', 'pages::auth.forgot-password')->name('forgot-password');
+
 Route::get('/auth/google/redirect', [GoogleAuthController::class, 'redirect'])->name('auth.google.redirect');
 Route::get('/auth/google/callback', [GoogleAuthController::class, 'callback'])->name('auth.google.callback');
 Route::post('/logout', [GoogleAuthController::class, 'logout'])->name('logout');
@@ -22,6 +31,7 @@ Route::middleware(['auth', 'admin'])->group(function () {
     Route::livewire('/admin/users', 'pages::admin.users')->name('admin.users');
     Route::livewire('/admin/feedback', 'pages::admin.feedback')->name('admin.feedback');
     Route::livewire('/admin/mail', 'pages::admin.mail')->name('admin.mail');
+    Route::livewire('/admin/payments', 'pages::admin.payments')->name('admin.payments');
     Route::livewire('/admin/password', 'pages::admin.password')->name('admin.password');
 });
 
@@ -53,16 +63,46 @@ Route::middleware('auth')->group(function () {
         ]);
     })->name('reports.cover')->can('update', 'report');
 
-    Route::get('/reports/{report}/output', function (Report $report) {
+    Route::get('/reports/{report}/output', function (Report $report, Request $request) {
+        // Payment gate: when at least one gateway is enabled, the download
+        // (browser print) is locked until a verified payment arms the one-shot
+        // session unlock. With no gateway enabled, downloads stay free.
+        $paymentRequired = PaymentSettings::anyEnabled() && PaymentSettings::price() > 0;
+        $unlockId = $request->session()->get(PaymentController::unlockKey($report));
+        $downloadUnlocked = ! $paymentRequired
+            || Payment::where('id', $unlockId)
+                ->where('report_id', $report->id)
+                ->get()
+                ->contains(fn (Payment $payment) => $payment->isRedeemable());
+
         return view('reports.output', [
             'report' => $report,
             'compiler' => ReportCompiler::for($report->load('sections')),
+            'paymentRequired' => $paymentRequired,
+            'downloadUnlocked' => $downloadUnlocked,
+            'enabledGateways' => PaymentSettings::enabledGateways(),
+            'downloadPrice' => PaymentSettings::price(),
         ]);
     })->name('reports.output')->can('view', 'report');
 
     Route::get('/reports/{report}/docx', function (Report $report) {
         return ReportWord::download($report);
     })->name('reports.docx')->can('view', 'report');
+
+    // Pay for a report download through an enabled gateway. The user must own
+    // the report (view ability); each completed payment unlocks a single
+    // download (spent via the consume endpoint when the print is taken).
+    Route::post('/reports/{report}/pay/{gateway}', [PaymentController::class, 'start'])
+        ->name('reports.pay')->can('view', 'report');
+
+    Route::get('/reports/{report}/pay/esewa/callback', [PaymentController::class, 'esewaCallback'])
+        ->name('reports.pay.esewa.callback')->can('view', 'report');
+
+    Route::get('/reports/{report}/pay/khalti/callback', [PaymentController::class, 'khaltiCallback'])
+        ->name('reports.pay.khalti.callback')->can('view', 'report');
+
+    Route::post('/reports/{report}/download/consume', [PaymentController::class, 'consume'])
+        ->name('reports.download.consume')->can('view', 'report');
 
     Route::post('/reports/{report}/cover/settings', function (Report $report, Request $request) {
         $request->validate([
