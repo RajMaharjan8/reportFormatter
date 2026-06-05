@@ -23,16 +23,42 @@ it('shows the print button and no pay options when no gateway is enabled', funct
         ->assertDontSee('to download:');
 });
 
-it('replaces the print button with pay options when a gateway is enabled and unpaid', function () {
+it('shows the paywall over a free preview, with no print button, when unpaid', function () {
     $user = loginAsTestUser();
     $report = Report::factory()->create(['user_id' => $user->id]);
     enableEsewa();
 
     $this->get(route('reports.output', $report))
         ->assertOk()
-        ->assertSee('Pay Rs.')
-        ->assertSee('Pay with Esewa')
+        ->assertSee('Download your report')
+        ->assertSee('eSewa')
+        ->assertSee('report-source', false)   // preview is rendered (free to view)
+        ->assertSee('paywall-print', false)   // print output is blocked
         ->assertDontSee('Print / Save as PDF');
+});
+
+it('shows both gateways on the paywall when both are enabled', function () {
+    $user = loginAsTestUser();
+    $report = Report::factory()->create(['user_id' => $user->id]);
+    enableEsewa();
+    Setting::set('khalti_enabled', '1');
+
+    $this->get(route('reports.output', $report))
+        ->assertOk()
+        ->assertSee('eSewa')
+        ->assertSee('Khalti');
+});
+
+it('still locks the download when a gateway is enabled but no price is set', function () {
+    $user = loginAsTestUser();
+    $report = Report::factory()->create(['user_id' => $user->id]);
+
+    Setting::set('esewa_enabled', '1'); // price left unset (free would be wrong)
+
+    $this->get(route('reports.output', $report))
+        ->assertOk()
+        ->assertDontSee('Print / Save as PDF')
+        ->assertSee('no price has been set');
 });
 
 it('shows the print button once a redeemable payment unlocks the session', function () {

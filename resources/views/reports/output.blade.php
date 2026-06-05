@@ -90,12 +90,39 @@
         }
         .report-toolbar .report-download:hover { background: #eef2ff; }
 
-        .report-toolbar .pay-label { font-size: 13px; font-weight: 600; color: #374151; }
-        .report-toolbar .pay-btn { background: #4f46e5; }
-        .report-toolbar .pay-esewa { background: #60bb46; }
-        .report-toolbar .pay-esewa:hover { background: #4ea537; }
-        .report-toolbar .pay-khalti { background: #5c2d91; }
-        .report-toolbar .pay-khalti:hover { background: #4a2475; }
+        /* ---- Paywall (banner above the free preview when payment is required) ---- */
+        .paywall { display: flex; justify-content: center; padding: 56px 20px; }
+        .paywall-banner { padding: 28px 20px 4px; }
+        .paywall-card {
+            width: 100%; max-width: 420px; background: #fff; border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(17, 24, 39, 0.08), 0 0 0 1px #e5e7eb;
+            padding: 32px 30px; text-align: center;
+        }
+        .paywall-lock {
+            width: 52px; height: 52px; margin: 0 auto 18px; border-radius: 9999px;
+            display: flex; align-items: center; justify-content: center;
+            background: #eef2ff; color: #4f46e5;
+        }
+        .paywall-lock svg { width: 26px; height: 26px; }
+        .paywall-card h1 { margin: 0 0 4px; font-size: 19px; font-weight: 700; color: #111827; }
+        .paywall-title { margin: 0; font-size: 14px; color: #6b7280; }
+        .paywall-price { margin: 18px 0 4px; font-size: 30px; font-weight: 800; color: #111827; letter-spacing: -0.5px; }
+        .paywall-sub { margin: 0 0 20px; font-size: 13px; color: #6b7280; }
+        .paywall-methods { display: flex; flex-direction: column; gap: 10px; }
+        .paywall-methods form { margin: 0; }
+        .pay-method {
+            display: flex; align-items: center; justify-content: space-between; width: 100%;
+            border: 0; border-radius: 10px; padding: 13px 18px; cursor: pointer;
+            font-size: 15px; font-weight: 600; color: #fff; transition: background .15s, transform .05s;
+        }
+        .pay-method:active { transform: translateY(1px); }
+        .pay-method-go { font-weight: 700; opacity: .9; }
+        .pay-method-esewa { background: #60bb46; }
+        .pay-method-esewa:hover { background: #4ea537; }
+        .pay-method-khalti { background: #5c2d91; }
+        .pay-method-khalti:hover { background: #4a2475; }
+        .paywall-note { margin: 18px 0 0; font-size: 12px; color: #9ca3af; }
+        .paywall-warn { margin: 18px 0 0; font-size: 13px; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 12px 14px; }
 
         .report-flash { max-width: 210mm; margin: 12px auto -4px; padding: 10px 16px; border-radius: 6px; font-size: 14px; font-weight: 500; }
         .report-flash-success { background: #ecfdf5; color: #065f46; }
@@ -278,14 +305,6 @@
 
             @if ($downloadUnlocked)
                 <button type="button" onclick="downloadReport()">Print / Save as PDF</button>
-            @else
-                <span class="pay-label">Pay Rs.&nbsp;{{ number_format($downloadPrice, 2) }} to download:</span>
-                @foreach ($enabledGateways as $gateway)
-                    <form method="POST" action="{{ route('reports.pay', ['report' => $report, 'gateway' => $gateway]) }}" style="display:inline">
-                        @csrf
-                        <button type="submit" class="pay-btn pay-{{ $gateway }}">Pay with {{ ucfirst($gateway) }}</button>
-                    </form>
-                @endforeach
             @endif
         </div>
     </div>
@@ -296,6 +315,13 @@
     @if (session('payment-error'))
         <div class="report-flash report-flash-error">{{ session('payment-error') }}</div>
     @endif
+
+    {{-- Free preview for everyone. When locked, a paywall banner sits above it
+         and the printed output is blocked (Cmd/Ctrl+P yields a payment notice,
+         not the report) so no free PDF can be produced. --}}
+    @unless ($downloadUnlocked)
+        @include('reports.partials.paywall')
+    @endunless
 
     <div class="report-loading">Preparing your report&hellip;</div>
 

@@ -10,14 +10,20 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Mail;
 use Livewire\Attributes\Validate;
 use Livewire\Component;
+use Livewire\WithFileUploads;
 
 new class extends Component
 {
+    use WithFileUploads;
+
     #[Validate('nullable|string|max:2000')]
     public string $fb_working = '';
 
     #[Validate('nullable|string|max:2000')]
     public string $fb_not_working = '';
+
+    /** @var list<\Livewire\Features\SupportFileUploads\TemporaryUploadedFile> */
+    public array $fb_images = [];
 
     /** @return array<string, string> */
     protected function validationAttributes(): array
@@ -25,7 +31,35 @@ new class extends Component
         return [
             'fb_working' => "what's working",
             'fb_not_working' => "what's not working",
+            'fb_images.*' => 'image',
         ];
+    }
+
+    public function getFeedbackImageLimitProperty(): int
+    {
+        return Feedback::imageLimit();
+    }
+
+    public function getFeedbackDailyLimitProperty(): int
+    {
+        return Feedback::dailyLimit();
+    }
+
+    /** Feedback submissions the user has left today. */
+    public function getFeedbackLeftTodayProperty(): int
+    {
+        $used = Feedback::where('user_id', Auth::id())
+            ->whereDate('created_at', today())
+            ->count();
+
+        return max(0, $this->feedbackDailyLimit - $used);
+    }
+
+    /** Drop one of the staged (not-yet-sent) images. */
+    public function removeFeedbackImage(int $index): void
+    {
+        unset($this->fb_images[$index]);
+        $this->fb_images = array_values($this->fb_images);
     }
     /**
      * The signed-in user's reports, newest activity first.
@@ -64,6 +98,18 @@ new class extends Component
      */
     public function sendFeedback(): void
     {
+        // Daily cap (admin-configurable) — keeps the inbox manageable.
+        if ($this->feedbackLeftToday <= 0) {
+            $this->addError('fb_working', "You've reached today's feedback limit ({$this->feedbackDailyLimit}). Please try again tomorrow.");
+
+            return;
+        }
+
+        $this->validate([
+            'fb_images' => 'array|max:'.$this->feedbackImageLimit,
+            'fb_images.*' => 'image|max:5120', // 5 MB each
+        ]);
+
         $this->validate();
 
         if (trim($this->fb_working) === '' && trim($this->fb_not_working) === '') {
@@ -72,10 +118,17 @@ new class extends Component
             return;
         }
 
+        $paths = [];
+
+        foreach ($this->fb_images as $image) {
+            $paths[] = $image->store('feedback', 'public');
+        }
+
         $feedback = Feedback::create([
             'user_id' => Auth::id(),
             'working' => $this->fb_working ?: null,
             'not_working' => $this->fb_not_working ?: null,
+            'images' => $paths ?: null,
         ]);
 
         $recipient = Setting::get('admin_notification_email', config('mail.from.address'));
@@ -90,7 +143,7 @@ new class extends Component
             }
         }
 
-        $this->reset('fb_working', 'fb_not_working');
+        $this->reset('fb_working', 'fb_not_working', 'fb_images');
 
         session()->flash('feedback-sent', 'Thanks for your feedback!');
 
@@ -192,10 +245,10 @@ new class extends Component
                                 <a href="{{ route('reports.sections', $report) }}" wire:navigate class="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 ring-1 ring-gray-300 hover:bg-gray-50">
                                     Write content
                                 </a>
-                                <a href="{{ route('reports.live-check', $report) }}" wire:navigate class="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-indigo-700 ring-1 ring-indigo-300 hover:bg-indigo-50">
+                                <a href="{{ route('reports.live-check', $report) }}" wire:navigate class="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 ring-1 ring-gray-300 hover:bg-gray-50">
                                     Format check
                                 </a>
-                                <a href="{{ route('reports.output', $report) }}" class="rounded-md bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-700">
+                                <a href="{{ route('reports.output', $report) }}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500">
                                     View report
                                 </a>
                                 <button type="button" wire:click="deleteReport({{ $report->id }})" wire:confirm="Delete this report and all its sections? This cannot be undone." class="rounded-md px-2 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50">
@@ -233,12 +286,51 @@ new class extends Component
                     @error('fb_not_working') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
                 </div>
 
-                <div class="flex justify-end gap-3">
-                    <button type="button" x-on:click="feedbackOpen = false" class="rounded-md bg-white px-4 py-2 text-sm font-semibold text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50">Cancel</button>
-                    <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
-                        <span wire:loading.remove wire:target="sendFeedback">Send feedback</span>
-                        <span wire:loading wire:target="sendFeedback">Sending…</span>
-                    </button>
+                {{-- Screenshots / images (optional, capped) --}}
+                <div>
+                    <div class="flex items-center justify-between">
+                        <label class="block text-sm font-medium text-gray-700">Screenshots <span class="font-normal text-gray-400">(optional)</span></label>
+                        <span class="text-xs text-gray-400">{{ count($fb_images) }}/{{ $this->feedbackImageLimit }}</span>
+                    </div>
+
+                    @if (count($fb_images) < $this->feedbackImageLimit)
+                        <label class="mt-1 flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-gray-300 px-3 py-3 text-sm text-gray-500 hover:border-indigo-400 hover:text-indigo-600">
+                            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5z" /></svg>
+                            <span wire:loading.remove wire:target="fb_images">Add image (up to {{ $this->feedbackImageLimit }})</span>
+                            <span wire:loading wire:target="fb_images">Uploading…</span>
+                            <input type="file" wire:model="fb_images" multiple accept="image/*" class="hidden">
+                        </label>
+                    @endif
+                    @error('fb_images.*') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                    @error('fb_images') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+
+                    @if (count($fb_images))
+                        <div class="mt-2 grid grid-cols-3 gap-2">
+                            @foreach ($fb_images as $index => $image)
+                                <div wire:key="fb-img-{{ $index }}" class="group relative">
+                                    <img src="{{ $image->temporaryUrl() }}" alt="" class="h-20 w-full rounded-md object-cover ring-1 ring-gray-200">
+                                    <button type="button" wire:click="removeFeedbackImage({{ $index }})" class="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-gray-900 text-xs text-white shadow hover:bg-red-600" title="Remove">&times;</button>
+                                </div>
+                            @endforeach
+                        </div>
+                    @endif
+                </div>
+
+                <div class="flex items-center justify-between gap-3">
+                    <span class="text-xs {{ $this->feedbackLeftToday <= 0 ? 'text-red-600' : 'text-gray-400' }}">
+                        @if ($this->feedbackLeftToday <= 0)
+                            Daily limit reached — try again tomorrow.
+                        @else
+                            {{ $this->feedbackLeftToday }} of {{ $this->feedbackDailyLimit }} feedbacks left today.
+                        @endif
+                    </span>
+                    <div class="flex gap-3">
+                        <button type="button" x-on:click="feedbackOpen = false" class="rounded-md bg-white px-4 py-2 text-sm font-semibold text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50">Cancel</button>
+                        <button type="submit" @disabled($this->feedbackLeftToday <= 0) class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50">
+                            <span wire:loading.remove wire:target="sendFeedback">Send feedback</span>
+                            <span wire:loading wire:target="sendFeedback">Sending…</span>
+                        </button>
+                    </div>
                 </div>
             </form>
         </div>

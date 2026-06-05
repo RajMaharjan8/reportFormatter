@@ -14,6 +14,10 @@
 {{ $feedback->not_working }}
 @endif
 
+@if (!empty($feedback->images))
+**Screenshots:** {{ count($feedback->images) }} image(s) attached to this email.
+@endif
+
 <x-mail::button :url="route('admin.feedback')">
 View in admin
 </x-mail::button>

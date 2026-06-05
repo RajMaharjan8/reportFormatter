@@ -68,6 +68,13 @@ class ReportCompiler
         $sectionIndex = 0;
 
         foreach ($this->report->sections as $section) {
+            // Hidden sections keep their content but are excluded from the
+            // compiled report — and skip the numbering so visible sections
+            // renumber 1, 2, 3 … without gaps.
+            if ($section->hidden) {
+                continue;
+            }
+
             // Custom front-matter pages render before the contents — they are
             // not numbered and do not appear in the Table of Contents.
             if ($section->placement === 'front') {

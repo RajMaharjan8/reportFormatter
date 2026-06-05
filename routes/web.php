@@ -64,10 +64,11 @@ Route::middleware('auth')->group(function () {
     })->name('reports.cover')->can('update', 'report');
 
     Route::get('/reports/{report}/output', function (Report $report, Request $request) {
-        // Payment gate: when at least one gateway is enabled, the download
-        // (browser print) is locked until a verified payment arms the one-shot
-        // session unlock. With no gateway enabled, downloads stay free.
-        $paymentRequired = PaymentSettings::anyEnabled() && PaymentSettings::price() > 0;
+        // Payment gate: as long as at least one gateway is enabled, the
+        // download (browser print) is locked until a verified payment arms the
+        // one-shot session unlock — regardless of the configured price. Only
+        // when BOTH gateways are disabled is the download free.
+        $paymentRequired = PaymentSettings::anyEnabled();
         $unlockId = $request->session()->get(PaymentController::unlockKey($report));
         $downloadUnlocked = ! $paymentRequired
             || Payment::where('id', $unlockId)

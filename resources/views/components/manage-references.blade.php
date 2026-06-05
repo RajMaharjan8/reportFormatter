@@ -243,7 +243,7 @@ new class extends Component
     <button
         type="button"
         wire:click="openModal"
-        class="rounded-md bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-purple-500"
+        class="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 ring-1 ring-gray-300 hover:bg-gray-50"
     >
         Manage References
     </button>
@@ -293,7 +293,7 @@ new class extends Component
                                 <button
                                     type="button"
                                     wire:click="selectType('{{ $value }}')"
-                                    class="rounded-md px-2.5 py-1 text-xs font-medium ring-1 {{ $type === $value ? 'bg-gray-900 text-white ring-gray-900' : 'bg-white text-gray-700 ring-gray-300 hover:bg-gray-50' }}"
+                                    class="rounded-md px-2.5 py-1 text-xs font-medium ring-1 {{ $type === $value ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white text-gray-700 ring-gray-300 hover:bg-gray-50' }}"
                                 >
                                     {{ $label }}
                                 </button>
@@ -407,7 +407,7 @@ new class extends Component
                 </div>
 
                 <div class="flex justify-end border-t border-gray-200 px-5 py-3">
-                    <button type="button" wire:click="closeModal" class="rounded-md bg-gray-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-gray-700">Done</button>
+                    <button type="button" wire:click="closeModal" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500">Done</button>
                 </div>
             </div>
         </div>

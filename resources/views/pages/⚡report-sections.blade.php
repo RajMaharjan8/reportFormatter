@@ -3,6 +3,8 @@
 use App\Models\Report;
 use App\Models\Section;
 use App\Support\CitationFormatter;
+use App\Support\ReportCompiler;
+use App\Support\SectionContent;
 use Livewire\Component;
 
 new class extends Component
@@ -49,6 +51,28 @@ new class extends Component
     }
 
     /**
+     * The compiled report (front matter + numbered sections, citations and
+     * figure/table numbers resolved) used to render the live preview pane.
+     */
+    public function getPreviewProperty(): ReportCompiler
+    {
+        return ReportCompiler::for($this->report->load('sections'));
+    }
+
+    /**
+     * The compiler id of the active section, so the preview can mark which
+     * block to mirror live as the user types ('sec-<id>' or 'front-<id>').
+     */
+    public function getActivePreviewIdProperty(): ?string
+    {
+        if (! $this->activeSection) {
+            return null;
+        }
+
+        return ($this->activeSection->isFrontPage() ? 'front-' : 'sec-').$this->activeSection->id;
+    }
+
+    /**
      * The 1-based position of the active body section, used as its heading
      * number. Front-matter pages are unnumbered and return 0.
      */
@@ -60,6 +84,7 @@ new class extends Component
 
         return (int) $this->report->sections()
             ->where('placement', 'body')
+            ->where('hidden', false)
             ->orderBy('order')
             ->pluck('id')
             ->search($this->activeSection->id) + 1;
@@ -83,12 +108,13 @@ new class extends Component
 
         $prior = $this->report->sections()
             ->where('placement', 'body')
+            ->where('hidden', false)
             ->where('order', '<', $this->activeSection->order)
             ->orderBy('order')
             ->get();
 
         foreach ($prior as $section) {
-            [$f, $t] = $this->countFiguresTables(\App\Support\SectionContent::toHtml($section->content));
+            [$f, $t] = $this->countFiguresTables(SectionContent::toHtml($section->content));
             $figures += $f;
             $tables += $t;
         }
@@ -173,6 +199,19 @@ new class extends Component
 
         $this->activeSection = $section;
         $this->syncEditorFromActive();
+    }
+
+    /**
+     * Toggle whether a section is hidden from the compiled report. The content
+     * is kept — hidden sections simply don't render in the preview or output.
+     */
+    public function toggleVisibility(int $sectionId): void
+    {
+        $section = $this->report->sections()->whereKey($sectionId)->first();
+
+        if ($section) {
+            $section->update(['hidden' => ! $section->hidden]);
+        }
     }
 
     public function deleteSection(int $sectionId): void
@@ -295,244 +334,119 @@ new class extends Component
     }
 }; ?>
 
-<div class="min-h-screen bg-gray-100">
-    <header class="border-b border-gray-200 bg-white">
-        <div class="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+<div
+    x-data="{ editorOpen: false }"
+    x-init="$store.preview.html = @js($activeSection ? \App\Support\SectionContent::toHtml($activeSection->content) : ''); $store.preview.title = @js($activeSection?->title ?? '')"
+    class="flex min-h-screen flex-col bg-gray-100 lg:h-screen lg:overflow-hidden"
+>
+    <header class="z-20 border-b border-gray-200 bg-white">
+        <div class="flex items-center justify-between gap-3 px-4 py-3 sm:px-6">
             <div class="min-w-0">
                 <a href="{{ route('reports.cover', ['report' => $report]) }}" class="text-xs font-medium text-indigo-600 hover:text-indigo-500">&larr; Back to cover</a>
                 <h1 class="truncate text-sm font-semibold text-gray-900">{{ $report->module_code }} &middot; {{ $report->module_title }}</h1>
             </div>
             <div class="flex shrink-0 flex-wrap items-center gap-2">
+                <button type="button" @click="editorOpen = true" class="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 lg:hidden">
+                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" /></svg>
+                    Edit chapters
+                </button>
                 <livewire:manage-references :report="$report" />
-                <a href="{{ route('reports.output', ['report' => $report]) }}" class="rounded-md bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-700">
+                <a href="{{ route('reports.output', ['report' => $report]) }}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500">
                     View full report
                 </a>
             </div>
         </div>
     </header>
 
-    <div class="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:flex-row">
-        <aside class="w-full space-y-4 lg:w-64 lg:shrink-0">
-            {{-- Front-matter pages — shown after the cover, before the contents --}}
-            <div class="rounded-lg bg-white p-4 shadow-sm ring-1 ring-gray-200">
-                <h2 class="text-xs font-semibold uppercase tracking-wide text-gray-500">Front pages</h2>
-                <p class="mt-1 text-[11px] text-gray-400">Extra pages after the cover, before the contents. Unnumbered.</p>
+    <div x-data="scrollSync()" data-active-key="{{ $this->activePreviewId }}" @preview-goto="goTo($event.detail.key)" @resize.window="onScroll()" class="relative flex flex-1 min-h-0 lg:overflow-hidden">
+        {{-- Mobile backdrop behind the off-canvas editor --}}
+        <div x-show="editorOpen" x-transition.opacity @click="editorOpen = false" class="fixed inset-0 z-30 bg-black/40 lg:hidden" x-cloak></div>
 
-                <ul wire:sort="reorder" class="mt-3 space-y-1">
+        {{-- LEFT: the editor column. On mobile it is an off-canvas drawer; on
+             large screens it is a static split pane beside the preview. --}}
+        <aside
+            x-ref="editor"
+            :class="editorOpen ? 'translate-x-0' : '-translate-x-full'"
+            class="fixed inset-y-0 left-0 z-40 flex w-[92%] max-w-md -translate-x-full flex-col gap-4 overflow-y-auto bg-gray-100 p-4 shadow-xl transition-transform duration-300 lg:static lg:z-auto lg:min-h-0 lg:w-[48%] lg:max-w-none lg:translate-x-0 lg:border-r lg:border-gray-200 lg:shadow-none"
+        >
+            <div class="flex items-start justify-between">
+                <div>
+                    <h2 class="text-base font-semibold text-gray-900">Content</h2>
+                    <p class="text-xs text-gray-500">Chapters &amp; sources — cite with <code class="rounded bg-gray-200 px-1 text-[11px]">[[key]]</code></p>
+                </div>
+                <button type="button" @click="editorOpen = false" class="rounded-md p-1.5 text-gray-400 hover:bg-gray-200 lg:hidden" title="Close">
+                    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+            </div>
+
+            {{-- Front-matter pages — shown after the cover, before the contents --}}
+            <section>
+                <h3 class="px-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Front pages</h3>
+                <ul wire:sort="reorder" class="mt-2 space-y-3">
                     @forelse ($this->frontPages as $section)
-                        <li
-                            wire:key="section-{{ $section->id }}"
-                            wire:sort:item="{{ $section->id }}"
-                            class="group flex items-center gap-1 rounded-md px-1.5 py-1.5 text-sm {{ $activeSection?->is($section) ? 'bg-amber-50 text-amber-800' : 'text-gray-700 hover:bg-gray-50' }}"
-                        >
-                            <span wire:sort:handle class="cursor-grab select-none text-gray-300 hover:text-gray-500" title="Drag to reorder">⠿</span>
-                            <button type="button" wire:click="selectSection({{ $section->id }})" class="flex-1 truncate text-left">
-                                {{ $section->title }}
-                            </button>
-                            <button type="button" wire:click="deleteSection({{ $section->id }})" wire:confirm="Delete this page?" class="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 text-xs text-red-600 hover:text-red-800">
-                                &times;
-                            </button>
-                        </li>
+                        @include('reports.partials.section-card', ['section' => $section, 'isFront' => true, 'number' => null])
                     @empty
-                        <li class="px-2 py-1.5 text-xs text-gray-500">No front pages yet</li>
+                        <li class="rounded-lg bg-white px-3 py-3 text-center text-xs text-gray-400 ring-1 ring-gray-200">No front pages yet</li>
                     @endforelse
                 </ul>
-
-                <form wire:submit="addFrontPage" class="mt-4 border-t border-gray-200 pt-3">
-                    <label for="newFrontPageTitle" class="block text-xs font-medium text-gray-700">Add front page</label>
-                    <div class="mt-1 flex gap-1">
-                        <input type="text" id="newFrontPageTitle" wire:model="newFrontPageTitle" placeholder="e.g. Acknowledgements" class="block w-full rounded-md px-2 py-1.5 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-amber-500">
-                        <button type="submit" class="rounded-md bg-amber-600 px-2.5 py-1.5 text-sm font-semibold text-white hover:bg-amber-500">+</button>
-                    </div>
+                <form wire:submit="addFrontPage" class="mt-3 flex gap-1">
+                    <input type="text" wire:model="newFrontPageTitle" placeholder="Add front page — e.g. Acknowledgements" class="block w-full rounded-md px-2 py-1.5 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <button type="submit" class="shrink-0 rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500">Add</button>
                 </form>
-            </div>
+            </section>
 
             {{-- Numbered body sections --}}
-            <div class="rounded-lg bg-white p-4 shadow-sm ring-1 ring-gray-200">
-                <h2 class="text-xs font-semibold uppercase tracking-wide text-gray-500">Sections</h2>
-                <p class="mt-1 text-[11px] text-gray-400">Drag the handle to reorder.</p>
-
-                <ul wire:sort="reorder" class="mt-3 space-y-1">
+            <section>
+                <h3 class="px-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Sections</h3>
+                <ul wire:sort="reorder" class="mt-2 space-y-3">
                     @forelse ($this->bodySections as $section)
-                        <li
-                            wire:key="section-{{ $section->id }}"
-                            wire:sort:item="{{ $section->id }}"
-                            class="group flex items-center gap-1 rounded-md px-1.5 py-1.5 text-sm {{ $activeSection?->is($section) ? 'bg-indigo-50 text-indigo-700' : 'text-gray-700 hover:bg-gray-50' }}"
-                        >
-                            <span wire:sort:handle class="cursor-grab select-none text-gray-300 hover:text-gray-500" title="Drag to reorder">⠿</span>
-                            <button type="button" wire:click="selectSection({{ $section->id }})" class="flex-1 truncate text-left">
-                                {{ $section->title }}
-                            </button>
-                            <button type="button" wire:click="deleteSection({{ $section->id }})" wire:confirm="Delete this section?" class="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 text-xs text-red-600 hover:text-red-800">
-                                &times;
-                            </button>
-                        </li>
+                        @include('reports.partials.section-card', ['section' => $section, 'isFront' => false, 'number' => $loop->iteration])
                     @empty
-                        <li class="px-2 py-1.5 text-xs text-gray-500">No sections yet</li>
+                        <li class="rounded-lg bg-white px-3 py-3 text-center text-xs text-gray-400 ring-1 ring-gray-200">No sections yet</li>
                     @endforelse
                 </ul>
-
-                <form wire:submit="addSection" class="mt-4 border-t border-gray-200 pt-3">
-                    <label for="newSectionTitle" class="block text-xs font-medium text-gray-700">Add section</label>
-                    <div class="mt-1 flex gap-1">
-                        <input type="text" id="newSectionTitle" wire:model="newSectionTitle" placeholder="e.g. Introduction" class="block w-full rounded-md px-2 py-1.5 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                        <button type="submit" class="rounded-md bg-indigo-600 px-2.5 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500">+</button>
-                    </div>
+                <form wire:submit="addSection" class="mt-3 flex gap-1">
+                    <input type="text" wire:model="newSectionTitle" placeholder="Add section — e.g. Introduction" class="block w-full rounded-md px-2 py-1.5 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <button type="submit" class="shrink-0 rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500">Add</button>
                 </form>
-            </div>
+            </section>
         </aside>
 
-        <main class="flex-1 min-w-0">
-            @if ($activeSection)
-                <div
-                    wire:key="editor-{{ $activeSection->id }}"
-                    x-data="editor({
-                        initialContent: @js(\App\Support\SectionContent::toHtml($activeSection->content)),
-                        references: @js($this->referencesPayload),
-                        citationFormat: @js($report->citationFormat()),
-                    })"
-                    x-init="$nextTick(() => mountEditor())"
-                    @references-updated.window="onReferencesUpdated($event.detail)"
-                    style="counter-reset: section {{ $this->activeSectionNumber }}"
-                    class="rounded-lg bg-white shadow-sm ring-1 ring-gray-200"
-                >
-                    {{-- Title + save --}}
-                    <div class="flex flex-wrap items-center gap-2 border-b border-gray-200 px-4 py-2">
-                        @if ($activeSection->isFrontPage())
-                            <span class="inline-flex h-7 shrink-0 items-center rounded-md bg-amber-50 px-2 text-xs font-semibold text-amber-800" title="Front-matter page — shown before the contents">
-                                Front page
-                            </span>
+        {{-- RIGHT: live preview of the compiled report --}}
+        <main x-ref="preview" @scroll="onScroll()" class="min-w-0 min-h-0 flex-1 overflow-y-auto bg-gray-200/70">
+            @php($activeId = $this->activePreviewId)
+            <div class="report-preview px-4 py-8 sm:px-8">
+                @forelse ($this->preview->frontMatter() as $page)
+                    <section class="preview-page" wire:key="preview-{{ $page['id'] }}" data-page-key="{{ $page['id'] }}">
+                        @if ($page['id'] === $activeId)
+                            <h2 class="preview-heading" x-text="$store.preview.title || @js($page['title'])"></h2>
+                            <div class="report-content" x-html="$store.preview.html"></div>
                         @else
-                            <span class="inline-flex h-7 shrink-0 items-center rounded-md bg-indigo-50 px-2 text-sm font-semibold text-indigo-700" title="Section number">
-                                {{ $this->activeSectionNumber }}
-                            </span>
+                            <h2 class="preview-heading">{{ $page['title'] }}</h2>
+                            <div class="report-content">{!! $page['html'] !!}</div>
                         @endif
-                        <input type="text" wire:model="editTitle" placeholder="Section title" class="min-w-50 flex-1 rounded-md px-2 py-1 text-sm font-semibold ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                        <div class="ml-auto flex items-center gap-2">
-                            <span x-show="dirty" class="text-xs text-amber-600">Unsaved changes</span>
-                            <button type="button" x-on:click="saveTo($wire)" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500">
-                                <span wire:loading.remove wire:target="save">Save</span>
-                                <span wire:loading wire:target="save">Saving…</span>
-                            </button>
+                    </section>
+                @empty
+                @endforelse
+
+                @forelse ($this->preview->sections() as $sec)
+                    <section class="preview-page" wire:key="preview-{{ $sec['id'] }}" data-page-key="{{ $sec['id'] }}">
+                        @if ($sec['id'] === $activeId)
+                            <h2 class="preview-heading">{{ $sec['marker'] }} <span x-text="$store.preview.title || @js($sec['title'])"></span></h2>
+                            <div class="report-content" x-html="$store.preview.html"></div>
+                        @else
+                            <h2 class="preview-heading">{{ $sec['marker'] }} {{ $sec['title'] }}</h2>
+                            <div class="report-content">{!! $sec['html'] !!}</div>
+                        @endif
+                    </section>
+                @empty
+                    @unless ($this->preview->hasFrontMatter())
+                        <div class="py-24 text-center text-sm text-gray-400">
+                            Your report preview appears here. Add a section to start writing.
                         </div>
-                    </div>
-
-                    {{-- Formatting toolbar --}}
-                    <div class="se-toolbar">
-                        <button type="button" x-on:mousedown.prevent x-on:click="setBlock('p')" class="toolbar-btn">Normal</button>
-                        <button type="button" x-on:mousedown.prevent x-on:click="setBlock('h2')" class="toolbar-btn font-semibold" title="Heading 2 — numbered 1.1">Heading 2</button>
-                        <button type="button" x-on:mousedown.prevent x-on:click="setBlock('h3')" class="toolbar-btn font-semibold" title="Heading 3 — numbered 1.1.1">Heading 3</button>
-                        <span class="toolbar-divider"></span>
-                        <button type="button" x-on:mousedown.prevent x-on:click="run('bold')" class="toolbar-btn font-bold">B</button>
-                        <button type="button" x-on:mousedown.prevent x-on:click="run('italic')" class="toolbar-btn italic">I</button>
-                        <button type="button" x-on:mousedown.prevent x-on:click="run('underline')" class="toolbar-btn underline">U</button>
-                        <span class="toolbar-divider"></span>
-                        <button type="button" x-on:mousedown.prevent x-on:click="run('justifyLeft')" class="toolbar-btn" title="Align left">Left</button>
-                        <button type="button" x-on:mousedown.prevent x-on:click="run('justifyCenter')" class="toolbar-btn" title="Align center">Center</button>
-                        <button type="button" x-on:mousedown.prevent x-on:click="run('justifyRight')" class="toolbar-btn" title="Align right">Right</button>
-                        <button type="button" x-on:mousedown.prevent x-on:click="run('justifyFull')" class="toolbar-btn" title="Justify">Justify</button>
-                        <span class="toolbar-divider"></span>
-                        <button type="button" x-on:mousedown.prevent x-on:click="run('insertUnorderedList')" class="toolbar-btn">&bull; List</button>
-                        <button type="button" x-on:mousedown.prevent x-on:click="run('insertOrderedList')" class="toolbar-btn">1. List</button>
-                        <span class="toolbar-divider"></span>
-                        <button type="button" x-on:mousedown.prevent x-on:click="saveSelection(); $refs.imageInput.click()" class="toolbar-btn text-indigo-600" title="Insert an image with a figure caption" aria-label="Insert image">
-                            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" /></svg>
-                        </button>
-                        <button type="button" x-on:mousedown.prevent x-on:click="insertTable()" class="toolbar-btn text-indigo-600" title="Insert a table with a name" aria-label="Insert table">
-                            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 01-1.125-1.125M3.375 19.5h7.5c.621 0 1.125-.504 1.125-1.125m-9.75 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125m1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125m0 3.75h-7.5A1.125 1.125 0 0112 18.375m9.75-12.75c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125m19.5 0v1.5c0 .621-.504 1.125-1.125 1.125M2.25 5.625v1.5c0 .621.504 1.125 1.125 1.125m0 0h17.25m-17.25 0h7.5c.621 0 1.125.504 1.125 1.125M3.375 8.25c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125m0 0h7.5m-7.5 0c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125m12-9.75v9.75m0-9.75c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m1.125-3.75H12m9.75 0c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m0 0h-7.5" /></svg>
-                        </button>
-                        <input type="file" x-ref="imageInput" accept="image/*" class="hidden" x-on:change="insertImage($event)">
-                        <span class="toolbar-divider"></span>
-                        <button type="button" x-on:mousedown.prevent x-on:click="openCitePicker()" class="toolbar-btn font-medium text-purple-700" title="Insert a citation (ref here) — pick which reference to use">Cite</button>
-                        <button type="button" x-on:mousedown.prevent x-on:click="insertReferencesList()" class="toolbar-btn font-medium text-purple-700" title="Insert the auto-generated references list — lists only the references used in this report">References list</button>
-                        <span class="toolbar-divider"></span>
-                        <span class="se-group-label">Table:</span>
-                        <button type="button" x-on:mousedown.prevent x-on:click="addRow()" class="toolbar-btn" title="Add a row below the cursor">+ Row</button>
-                        <button type="button" x-on:mousedown.prevent x-on:click="deleteRow()" class="toolbar-btn" title="Delete the current row">&minus; Row</button>
-                        <button type="button" x-on:mousedown.prevent x-on:click="addColumn()" class="toolbar-btn" title="Add a column right of the cursor">+ Col</button>
-                        <button type="button" x-on:mousedown.prevent x-on:click="deleteColumn()" class="toolbar-btn" title="Delete the current column">&minus; Col</button>
-                        <button type="button" x-on:mousedown.prevent x-on:click="resizeColumn(6)" class="toolbar-btn" title="Make the current column wider">Col wider</button>
-                        <button type="button" x-on:mousedown.prevent x-on:click="resizeColumn(-6)" class="toolbar-btn" title="Make the current column narrower">Col narrower</button>
-                        <span class="toolbar-divider"></span>
-                        <span class="se-group-label">Image:</span>
-                        <button type="button" x-on:mousedown.prevent x-on:click="resizeImage(-10)" class="toolbar-btn" title="Click an image, then shrink it">Smaller</button>
-                        <button type="button" x-on:mousedown.prevent x-on:click="resizeImage(10)" class="toolbar-btn" title="Click an image, then enlarge it">Larger</button>
-                    </div>
-
-                    {{-- Citation picker --}}
-                    <div x-show="citePickerOpen" x-cloak x-on:click.outside="closeCitePicker()" class="border-b border-purple-100 bg-purple-50 px-4 py-3">
-                        <div class="flex items-center justify-between">
-                            <p class="text-xs font-semibold uppercase tracking-wide text-purple-700">Insert citation</p>
-                            <button type="button" x-on:click="closeCitePicker()" class="text-xs text-purple-700 hover:text-purple-900">Close</button>
-                        </div>
-                        <template x-if="references.length === 0">
-                            <p class="mt-2 text-xs text-gray-600">No references yet — add one via <em>Manage References</em>.</p>
-                        </template>
-                        <ul class="mt-2 max-h-48 space-y-1 overflow-y-auto">
-                            <template x-for="reference in references" :key="reference.id">
-                                <li>
-                                    <button
-                                        type="button"
-                                        x-on:mousedown.prevent
-                                        x-on:click="insertCitation(reference.id)"
-                                        class="flex w-full items-center justify-between rounded-md bg-white px-3 py-1.5 text-left text-xs ring-1 ring-purple-200 hover:bg-purple-100"
-                                    >
-                                        <span x-text="reference.label" class="truncate pr-3"></span>
-                                        <span class="shrink-0 font-mono text-[11px] text-purple-700" x-text="reference.inline[citationFormat] || ''"></span>
-                                    </button>
-                                </li>
-                            </template>
-                        </ul>
-                    </div>
-
-                    {{-- Editable area. The figure/table counters start from the
-                         number of figures/tables in earlier sections so the
-                         editor matches the report's continuous numbering. --}}
-                    <div wire:ignore>
-                        <div x-ref="content" contenteditable="true" spellcheck="true"
-                            style="counter-reset: h2 0 figure {{ $this->figureTableOffset['figures'] }} table {{ $this->figureTableOffset['tables'] }}"
-                            class="se-content {{ $activeSection->isFrontPage() ? 'se-front-page' : '' }}"></div>
-                    </div>
-
-                    {{-- Transient notice (replaces window.alert) --}}
-                    <div x-show="notice" x-transition x-cloak class="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center">
-                        <div class="pointer-events-auto rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white shadow-lg" x-text="notice"></div>
-                    </div>
-
-                    {{-- Image too large warning --}}
-                    <div x-show="imageError" x-transition x-cloak class="fixed inset-x-0 top-6 z-50 flex justify-center px-4">
-                        <div class="flex max-w-md items-start gap-3 rounded-md bg-red-50 px-4 py-3 text-sm font-medium text-red-800 shadow-lg ring-1 ring-red-200">
-                            <span aria-hidden="true" class="mt-0.5">&#9888;</span>
-                            <span class="flex-1" x-text="imageError"></span>
-                            <button type="button" x-on:click="imageError = ''" class="-mr-1 text-red-500 hover:text-red-700" title="Dismiss">&times;</button>
-                        </div>
-                    </div>
-
-                    {{-- Image caption modal (replaces window.prompt) --}}
-                    <div x-show="imageModalOpen" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" x-on:keydown.escape.window="cancelImage()">
-                        <div class="w-full max-w-md rounded-lg bg-white p-5 shadow-xl" x-on:click.outside="cancelImage()">
-                            <h3 class="text-base font-semibold text-gray-900">Add a figure caption</h3>
-                            <p class="mt-1 text-xs text-gray-500">Describe the image, e.g. <em>OMR answer sheet</em>. The <strong>Figure&nbsp;number</strong> is added automatically &mdash; don't type &ldquo;Figure 1&rdquo;. Leave blank for no caption.</p>
-                            <input
-                                type="text"
-                                x-ref="imageCaptionInput"
-                                x-model="imageCaption"
-                                x-on:keydown.enter.prevent="confirmImage()"
-                                placeholder="e.g. OMR answer sheet"
-                                class="mt-3 block w-full rounded-md px-3 py-2 text-sm ring-1 ring-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                            >
-                            <div class="mt-4 flex justify-end gap-2">
-                                <button type="button" x-on:click="cancelImage()" class="rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50">Cancel</button>
-                                <button type="button" x-on:click="confirmImage()" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500">Insert image</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            @else
-                <div class="rounded-lg bg-white p-10 text-center shadow-sm ring-1 ring-gray-200">
-                    <p class="text-sm text-gray-600">Add your first section from the sidebar to start writing.</p>
-                </div>
-            @endif
+                    @endunless
+                @endforelse
+            </div>
         </main>
     </div>
 </div>

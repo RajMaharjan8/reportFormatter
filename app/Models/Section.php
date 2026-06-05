@@ -18,12 +18,14 @@ class Section extends Model
         'order',
         'title',
         'content',
+        'hidden',
     ];
 
     protected function casts(): array
     {
         return [
             'order' => 'integer',
+            'hidden' => 'boolean',
         ];
     }
 

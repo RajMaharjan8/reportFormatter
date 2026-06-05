@@ -5,6 +5,7 @@ namespace App\Mail;
 use App\Models\Feedback;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
+use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
@@ -26,6 +27,19 @@ class FeedbackSubmitted extends Mailable
     {
         return new Content(
             markdown: 'mail.feedback',
+        );
+    }
+
+    /**
+     * Attach any screenshots the user added.
+     *
+     * @return list<Attachment>
+     */
+    public function attachments(): array
+    {
+        return array_map(
+            fn (string $path): Attachment => Attachment::fromStorageDisk('public', $path),
+            $this->feedback->images ?? [],
         );
     }
 }
